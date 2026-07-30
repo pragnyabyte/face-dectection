@@ -236,10 +236,6 @@
             <i class="fa-solid fa-file-chart-column"></i>
             <span>Reports & Analytics</span>
           </button>
-          <button class="nav-link" data-tab="settings">
-            <i class="fa-solid fa-sliders"></i>
-            <span>System Settings</span>
-          </button>
         </nav>
 
         <div class="sidebar-footer">
@@ -651,52 +647,6 @@
                   <canvas id="chart-punctuality-pie" height="220"></canvas>
                 </div>
               </div>
-            </div>
-          </div>
-        </section>
-
-
-        <!-- 7. SYSTEM SETTINGS VIEW -->
-        <section id="view-settings" class="tab-view">
-          <div class="view-header">
-            <div>
-              <h2 class="view-title">System Configuration & Settings</h2>
-              <p class="view-subtitle">Configure AI face recognition parameters, camera sources, and notification settings.</p>
-            </div>
-          </div>
-
-          <div class="glass-card p-4">
-            <h5 class="mb-4 text-accent"><i class="fa-solid fa-sliders me-2"></i> AI Recognition Sensitivity & Thresholds</h5>
-            <div class="form-group mb-4">
-              <label class="form-label">Face Recognition Confidence Threshold (<span id="setting-threshold-val">85</span>%)</label>
-              <input type="range" class="form-range" id="setting-confidence-slider" min="60" max="98" value="85" />
-            </div>
-
-            <div class="form-group mb-4">
-              <label class="form-label">Duplicate Attendance Cooldown (Minutes)</label>
-              <select class="form-control" id="setting-cooldown-select">
-                <option value="1">1 Minute</option>
-                <option value="5" selected>5 Minutes</option>
-                <option value="15">15 Minutes</option>
-                <option value="60">1 Hour</option>
-              </select>
-            </div>
-
-            <h5 class="mb-4 text-accent mt-5"><i class="fa-solid fa-shield-halved me-2"></i> Anti-Spoofing & Liveness Features</h5>
-            <div class="form-check form-switch mb-3">
-              <input class="form-check-input" type="checkbox" id="setting-blink-liveness" checked>
-              <label class="form-check-label" for="setting-blink-liveness">Strict Blink Liveness Detection (Prevents photo spoofing)</label>
-            </div>
-
-            <div class="form-check form-switch mb-3">
-              <input class="form-check-input" type="checkbox" id="setting-parent-alerts" checked>
-              <label class="form-check-label" for="setting-parent-alerts">Automatic SMS/Email Parent Notifications on Absence</label>
-            </div>
-
-            <div class="mt-4">
-              <button class="btn btn-primary" id="btn-save-settings">
-                <i class="fa-solid fa-check me-2"></i> Save Configuration
-              </button>
             </div>
           </div>
         </section>
