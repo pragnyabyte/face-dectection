@@ -2,10 +2,17 @@ const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const bcrypt = require('bcryptjs');
 
+let mongoose = null;
+try {
+  mongoose = require('mongoose');
+} catch (e) {
+  console.log('Mongoose not installed locally, operating in SQLite mode.');
+}
+
 const dbPath = path.join(__dirname, 'attendance.db');
 const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
-    console.error('Error opening database:', err.message);
+    console.error('Error opening SQLite database:', err.message);
   } else {
     console.log('Connected to SQLite Database at:', dbPath);
   }
@@ -41,6 +48,16 @@ const dbGet = (sql, params = []) => {
 
 // Initialize Database Tables & Seed Data
 async function initDatabase() {
+  // Connect to MongoDB if MONGODB_URI is provided
+  if (process.env.MONGODB_URI) {
+    try {
+      await mongoose.connect(process.env.MONGODB_URI);
+      console.log('Connected to MongoDB via Mongoose!');
+    } catch (mErr) {
+      console.warn('MongoDB connection warning:', mErr.message, '- continuing with SQLite database.');
+    }
+  }
+
   return new Promise((resolve, reject) => {
     db.serialize(async () => {
       try {
@@ -57,21 +74,54 @@ async function initDatabase() {
           )
         `);
 
-        // Students Table
+        // Students Table with complete specification fields
         db.run(`
           CREATE TABLE IF NOT EXISTS students (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             student_id TEXT UNIQUE NOT NULL,
             name TEXT NOT NULL,
-            roll_number TEXT NOT NULL,
+            roll_number TEXT UNIQUE NOT NULL,
+            registration_number TEXT,
+            branch TEXT NOT NULL,
             department TEXT NOT NULL,
-            email TEXT,
+            semester TEXT DEFAULT '1',
+            section TEXT DEFAULT 'A',
+            mobile TEXT,
             phone TEXT,
+            email TEXT,
+            address TEXT,
+            photo_path TEXT,
             gender TEXT DEFAULT 'Other',
             face_enrolled INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
           )
         `);
+
+        // Helper migrations for students table columns
+        const studentColumns = await dbQuery("PRAGMA table_info(students)");
+        const colNames = studentColumns.map(c => c.name);
+        
+        if (!colNames.includes('registration_number')) {
+          db.run("ALTER TABLE students ADD COLUMN registration_number TEXT");
+        }
+        if (!colNames.includes('branch')) {
+          db.run("ALTER TABLE students ADD COLUMN branch TEXT");
+        }
+        if (!colNames.includes('semester')) {
+          db.run("ALTER TABLE students ADD COLUMN semester TEXT DEFAULT '1'");
+        }
+        if (!colNames.includes('section')) {
+          db.run("ALTER TABLE students ADD COLUMN section TEXT DEFAULT 'A'");
+        }
+        if (!colNames.includes('mobile')) {
+          db.run("ALTER TABLE students ADD COLUMN mobile TEXT");
+        }
+        if (!colNames.includes('address')) {
+          db.run("ALTER TABLE students ADD COLUMN address TEXT");
+        }
+        if (!colNames.includes('photo_path')) {
+          db.run("ALTER TABLE students ADD COLUMN photo_path TEXT");
+        }
 
         // Face Embeddings Table
         db.run(`
@@ -94,43 +144,14 @@ async function initDatabase() {
             time TEXT NOT NULL,
             timestamp INTEGER NOT NULL,
             status TEXT NOT NULL,
-            mode TEXT DEFAULT 'Face AI',
+            mode TEXT DEFAULT 'Webcam',
             location_lat REAL,
             location_lng REAL,
-            confidence REAL,
+            confidence REAL DEFAULT 98.5,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE
           )
         `);
-
-        // Migration check: verify if table constraint prevents 'Check-Out'
-        db.get("SELECT sql FROM sqlite_master WHERE type='table' AND name='attendance'", async (err, row) => {
-          if (row && row.sql && row.sql.includes("CHECK(status IN")) {
-            console.log('Migrating attendance table to support Check-Out / Check-In status...');
-            db.serialize(() => {
-              db.run("ALTER TABLE attendance RENAME TO attendance_old");
-              db.run(`
-                CREATE TABLE attendance (
-                  id INTEGER PRIMARY KEY AUTOINCREMENT,
-                  student_id TEXT NOT NULL,
-                  date TEXT NOT NULL,
-                  time TEXT NOT NULL,
-                  timestamp INTEGER NOT NULL,
-                  status TEXT NOT NULL,
-                  mode TEXT DEFAULT 'Face AI',
-                  location_lat REAL,
-                  location_lng REAL,
-                  confidence REAL,
-                  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                  FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE
-                )
-              `);
-              db.run("INSERT INTO attendance SELECT * FROM attendance_old");
-              db.run("DROP TABLE attendance_old");
-              console.log('Attendance table migration completed successfully.');
-            });
-          }
-        });
 
         // System Notifications Table
         db.run(`
@@ -143,7 +164,7 @@ async function initDatabase() {
           )
         `);
 
-        // Seed Users
+        // Seed Users if empty
         const userCount = await dbGet('SELECT COUNT(*) as count FROM users');
         if (userCount.count === 0) {
           const salt = await bcrypt.genSalt(10);
@@ -161,49 +182,47 @@ async function initDatabase() {
           );
           await dbRun(
             `INSERT INTO users (username, password_hash, role, name, email) VALUES (?, ?, ?, ?, ?)`,
-            ['student', studentPass, 'student', 'Alex Morgan', 'alex.morgan@student.edu']
+            ['student', studentPass, 'student', 'Rahul Kumar', 'rahul.k@institution.edu']
           );
           console.log('Seeded default users (admin/admin123, teacher/teacher123, student/student123)');
         }
 
-        // Seed Sample Students
+        // Seed Sample Students if empty
         const studentCount = await dbGet('SELECT COUNT(*) as count FROM students');
         if (studentCount.count === 0) {
           const sampleStudents = [
-            ['STU-1001', 'Alex Morgan', 'CS-2024-01', 'Computer Science', 'alex.morgan@student.edu', '+1 555-0101', 'Male', 0],
-            ['STU-1002', 'Sarah Jenkins', 'EE-2024-05', 'Electrical Engineering', 'sarah.j@student.edu', '+1 555-0102', 'Female', 0],
-            ['STU-1003', 'Michael Chen', 'ME-2024-12', 'Mechanical Engineering', 'm.chen@student.edu', '+1 555-0103', 'Male', 0],
-            ['STU-1004', 'Priya Sharma', 'IT-2024-08', 'Information Technology', 'p.sharma@student.edu', '+1 555-0104', 'Female', 0],
-            ['STU-1005', 'David Miller', 'BA-2024-03', 'Business Admin', 'd.miller@student.edu', '+1 555-0105', 'Male', 0],
-            ['STU-1006', 'Emma Watson', 'CS-2024-18', 'Computer Science', 'e.watson@student.edu', '+1 555-0106', 'Female', 0]
+            ['STU-101', 'Rahul Kumar', '101', 'REG-2024-101', 'Computer Science', 'Computer Science', 'Semester 6', 'A', '+91 9876543210', '+91 9876543210', 'rahul.k@institution.edu', 'New Delhi, India', 0],
+            ['STU-102', 'Amit Das', '102', 'REG-2024-102', 'Information Technology', 'Information Technology', 'Semester 6', 'B', '+91 9876543211', '+91 9876543211', 'amit.d@institution.edu', 'Kolkata, India', 0],
+            ['STU-103', 'Priya Sharma', '103', 'REG-2024-103', 'Electrical Engineering', 'Electrical Engineering', 'Semester 4', 'A', '+91 9876543212', '+91 9876543212', 'priya.s@institution.edu', 'Mumbai, India', 0],
+            ['STU-104', 'Sneha Patel', '104', 'REG-2024-104', 'Mechanical Engineering', 'Mechanical Engineering', 'Semester 4', 'A', '+91 9876543213', '+91 9876543213', 'sneha.p@institution.edu', 'Ahmedabad, India', 0],
+            ['STU-105', 'Vikram Singh', '105', 'REG-2024-105', 'Civil Engineering', 'Civil Engineering', 'Semester 2', 'B', '+91 9876543214', '+91 9876543214', 'vikram.s@institution.edu', 'Jaipur, India', 0]
           ];
 
           for (const s of sampleStudents) {
             await dbRun(
-              `INSERT INTO students (student_id, name, roll_number, department, email, phone, gender, face_enrolled) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+              `INSERT INTO students (student_id, name, roll_number, registration_number, branch, department, semester, section, mobile, phone, email, address, face_enrolled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               s
             );
           }
-          console.log('Seeded sample student directory');
+          console.log('Seeded sample student directory with 9 complete fields');
 
-          // Seed Sample Attendance Records for visual demonstration
+          // Seed Sample Attendance Records
           const today = new Date().toISOString().split('T')[0];
           const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
           const twoDaysAgo = new Date(Date.now() - 2 * 86400000).toISOString().split('T')[0];
 
           const sampleLogs = [
-            ['STU-1001', today, '08:55 AM', Date.now() - 3600000, 'Present', 'Face AI', 98.5],
-            ['STU-1002', today, '09:02 AM', Date.now() - 3200000, 'Present', 'Face AI', 96.2],
-            ['STU-1003', today, '09:18 AM', Date.now() - 2800000, 'Late', 'Face AI', 92.4],
-            ['STU-1004', today, '08:50 AM', Date.now() - 3900000, 'Present', 'Face AI', 99.1],
-            ['STU-1001', yesterday, '08:52 AM', Date.now() - 86400000, 'Present', 'Face AI', 97.8],
-            ['STU-1002', yesterday, '09:05 AM', Date.now() - 86400000 + 300000, 'Late', 'Face AI', 94.0],
-            ['STU-1003', yesterday, '08:58 AM', Date.now() - 86400000, 'Present', 'Face AI', 95.6],
-            ['STU-1004', yesterday, '08:48 AM', Date.now() - 86400000, 'Present', 'Face AI', 98.9],
-            ['STU-1005', yesterday, '09:00 AM', Date.now() - 86400000, 'Present', 'QR Backup', 100.0],
-            ['STU-1001', twoDaysAgo, '08:50 AM', Date.now() - 2 * 86400000, 'Present', 'Face AI', 98.0],
-            ['STU-1002', twoDaysAgo, '08:59 AM', Date.now() - 2 * 86400000, 'Present', 'Face AI', 96.7],
-            ['STU-1004', twoDaysAgo, '08:54 AM', Date.now() - 2 * 86400000, 'Present', 'Face AI', 97.5]
+            ['STU-101', today, '09:31 AM', Date.now() - 3600000, 'Present', 'Webcam', 98.5],
+            ['STU-102', today, '09:32 AM', Date.now() - 3200000, 'Present', 'Webcam', 96.2],
+            ['STU-103', today, '09:34 AM', Date.now() - 2800000, 'Present', 'Webcam', 99.1],
+            ['STU-104', today, '09:48 AM', Date.now() - 1200000, 'Late', 'Webcam', 92.4],
+            ['STU-101', yesterday, '09:28 AM', Date.now() - 86400000, 'Present', 'Webcam', 97.8],
+            ['STU-102', yesterday, '09:46 AM', Date.now() - 86400000 + 300000, 'Late', 'Webcam', 94.0],
+            ['STU-103', yesterday, '09:30 AM', Date.now() - 86400000, 'Present', 'Webcam', 98.9],
+            ['STU-105', yesterday, '09:33 AM', Date.now() - 86400000, 'Present', 'Webcam', 95.5],
+            ['STU-101', twoDaysAgo, '09:25 AM', Date.now() - 2 * 86400000, 'Present', 'Webcam', 98.0],
+            ['STU-102', twoDaysAgo, '09:30 AM', Date.now() - 2 * 86400000, 'Present', 'Webcam', 96.7],
+            ['STU-103', twoDaysAgo, '09:29 AM', Date.now() - 2 * 86400000, 'Present', 'Webcam', 97.5]
           ];
 
           for (const log of sampleLogs) {

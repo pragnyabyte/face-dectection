@@ -4,147 +4,202 @@ const path = require('path');
 const fs = require('fs');
 const { dbQuery, dbGet, dbRun } = require('../db/database');
 
+let StudentModel = null;
+try {
+  StudentModel = require('../models/Student');
+} catch (e) {}
+
 const UPLOADS_DIR = path.join(__dirname, '..', 'uploads', 'faces');
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
 
-// POST /api/face/enroll - Store face descriptors, image, student info & auto-mark attendance
+// POST /api/face/enroll - Store 5-pose face descriptors, image gallery & metadata
 router.post('/enroll', async (req, res) => {
   try {
     const { 
-      student_id, 
+      student_id, studentId,
       name, 
-      roll_number, 
-      department, 
-      email, 
-      phone, 
-      gender,
+      roll_number, rollNumber,
+      registration_number, registrationNumber,
+      branch, department,
+      semester,
+      section,
+      mobile, phone,
+      email,
+      address,
       descriptors, 
+      sample_images, // Array of base64 images (poses 1 to 5)
       sample_image_base64,
       mark_attendance 
     } = req.body;
 
-    if (!student_id || !descriptors || !Array.isArray(descriptors) || descriptors.length === 0) {
+    const sId = studentId || student_id;
+    const rNum = rollNumber || roll_number;
+    const regNum = registrationNumber || registration_number;
+    const bName = branch || department;
+
+    if (!sId || !descriptors || !Array.isArray(descriptors) || descriptors.length === 0) {
       return res.status(400).json({ success: false, message: 'Student ID and face descriptors are required.' });
     }
 
-    // 1. Check if student exists; if not, create student record automatically
-    let student = await dbGet('SELECT * FROM students WHERE student_id = ?', [student_id]);
-    if (!student) {
-      if (!name || !roll_number || !department) {
-        return res.status(400).json({ success: false, message: 'Full Name, Roll Number, and Department are required for new student registration.' });
+    // 1. Create dedicated folder: /uploads/faces/<sId>/
+    const studentDir = path.join(UPLOADS_DIR, sId);
+    if (!fs.existsSync(studentDir)) {
+      fs.mkdirSync(studentDir, { recursive: true });
+    }
+
+    // 2. Save pose photos to disk
+    const savedPhotoPaths = [];
+    const imagesToProcess = sample_images && Array.isArray(sample_images) ? sample_images : (sample_image_base64 ? [sample_image_base64] : []);
+    
+    imagesToProcess.forEach((base64Img, idx) => {
+      if (base64Img) {
+        const base64Data = base64Img.replace(/^data:image\/\w+;base64,/, '');
+        const fileName = `pose_${idx + 1}_${Date.now()}.jpg`;
+        const relativePath = path.join('uploads', 'faces', sId, fileName).replace(/\\/g, '/');
+        const fullPath = path.join(__dirname, '..', relativePath);
+        fs.writeFileSync(fullPath, base64Data, { encoding: 'base64' });
+        savedPhotoPaths.push(relativePath);
       }
+    });
+
+    const mainPhotoPath = savedPhotoPaths[0] || '';
+
+    // 3. Save to MongoDB if available
+    if (process.env.MONGODB_URI) {
+      let student = await StudentModel.findOne({ $or: [{ studentId: sId }, { rollNumber: rNum }] });
+      if (!student) {
+        student = await StudentModel.create({
+          studentId: sId,
+          name: name || sId,
+          rollNumber: rNum || sId,
+          registrationNumber: regNum || `REG-${rNum}`,
+          branch: bName || 'Computer Science',
+          semester: semester || '1',
+          section: section || 'A',
+          mobile: mobile || phone || '',
+          email: email || '',
+          address: address || '',
+          photoPath: mainPhotoPath,
+          posePhotos: savedPhotoPaths,
+          faceEncoding: descriptors[0] || [],
+          descriptors: descriptors,
+          faceEnrolled: true
+        });
+      } else {
+        student.photoPath = mainPhotoPath || student.photoPath;
+        student.posePhotos = savedPhotoPaths.length > 0 ? savedPhotoPaths : student.posePhotos;
+        student.faceEncoding = descriptors[0] || student.faceEncoding;
+        student.descriptors = descriptors;
+        student.faceEnrolled = true;
+        await student.save();
+      }
+
+      return res.json({
+        success: true,
+        message: `Face descriptors enrolled successfully for ${student.name}`,
+        student,
+        photoPath: mainPhotoPath
+      });
+    }
+
+    // 4. SQLite Storage Fallback
+    let student = await dbGet('SELECT * FROM students WHERE student_id = ? OR roll_number = ?', [sId, rNum]);
+    if (!student) {
       const sResult = await dbRun(
-        `INSERT INTO students (student_id, name, roll_number, department, email, phone, gender, face_enrolled) VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
-        [student_id, name, roll_number, department, email || '', phone || '', gender || 'Other']
+        `INSERT INTO students (student_id, name, roll_number, registration_number, branch, department, semester, section, mobile, phone, email, address, photo_path, face_enrolled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+        [sId, name || sId, rNum || sId, regNum || `REG-${rNum}`, bName || 'General', bName || 'General', semester || '1', section || 'A', mobile || phone || '', mobile || phone || '', email || '', address || '', mainPhotoPath]
       );
-      student = { id: sResult.id, student_id, name, roll_number, department, email, phone, gender, face_enrolled: 1 };
+      student = { id: sResult.id, student_id: sId, name, roll_number: rNum, branch: bName, photo_path: mainPhotoPath };
     } else {
-      await dbRun('UPDATE students SET face_enrolled = 1 WHERE student_id = ?', [student_id]);
+      await dbRun(
+        `UPDATE students SET face_enrolled = 1, photo_path = ? WHERE id = ?`,
+        [mainPhotoPath || student.photo_path, student.id]
+      );
     }
 
-    // 2. Save face image photo file to disk
-    let savedImagePath = null;
-    if (sample_image_base64) {
-      const base64Data = sample_image_base64.replace(/^data:image\/\w+;base64,/, '');
-      const fileName = `${student_id}_${Date.now()}.jpg`;
-      savedImagePath = path.join('uploads', 'faces', fileName);
-      const fullPath = path.join(__dirname, '..', savedImagePath);
-      fs.writeFileSync(fullPath, base64Data, { encoding: 'base64' });
-    }
+    // Clear old embeddings for re-enrollment
+    await dbRun('DELETE FROM face_embeddings WHERE student_id = ?', [sId]);
 
-    // 3. Save face descriptors in DB
+    // Insert new descriptors
     for (const desc of descriptors) {
       const descJson = typeof desc === 'string' ? desc : JSON.stringify(desc);
       await dbRun(
         `INSERT INTO face_embeddings (student_id, descriptor_json, image_path) VALUES (?, ?, ?)`,
-        [student_id, descJson, savedImagePath]
+        [sId, descJson, mainPhotoPath]
       );
-    }
-
-    // 4. Mark attendance automatically if requested
-    let attendanceRecord = null;
-    if (mark_attendance) {
-      const now = new Date();
-      const dateStr = now.toISOString().split('T')[0];
-      const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      const currentTimestamp = now.getTime();
-
-      const hour = now.getHours();
-      const minute = now.getMinutes();
-      const isLate = (hour > 9) || (hour === 9 && minute > 15);
-      const status = isLate ? 'Late' : 'Present';
-
-      const attResult = await dbRun(
-        `INSERT INTO attendance (student_id, date, time, timestamp, status, mode, confidence) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [student_id, dateStr, timeStr, currentTimestamp, status, 'Face AI', 99.2]
-      );
-
-      await dbRun(
-        `INSERT INTO notifications (title, message, type) VALUES (?, ?, ?)`,
-        ['New Face Registered & Marked Present', `Enrolled & marked attendance for ${student.name} (${student_id})`, 'success']
-      );
-
-      attendanceRecord = {
-        id: attResult.id,
-        student_id: student.student_id,
-        name: student.name,
-        date: dateStr,
-        time: timeStr,
-        status,
-        mode: 'Face AI'
-      };
     }
 
     res.json({
       success: true,
-      message: `Face photo & descriptors saved for ${student.name}! ${mark_attendance ? 'Attendance marked PRESENT.' : ''}`,
-      student,
-      attendance: attendanceRecord,
-      photo_url: savedImagePath ? `/${savedImagePath.replace(/\\/g, '/')}` : null
+      message: `Face descriptors registered for ${student.name}!`,
+      student_id: sId,
+      photoPath: mainPhotoPath,
+      samples_saved: descriptors.length
     });
   } catch (err) {
-    console.error('Error during face enrollment:', err);
-    res.status(500).json({ success: false, message: 'Failed to process face enrollment and attendance.' });
+    console.error('Error in /api/face/enroll:', err);
+    res.status(500).json({ success: false, message: 'Server error enrolling face encodings' });
   }
 });
 
-// GET /api/face/descriptors - Retrieve all enrolled descriptors for live matching
+// GET /api/face/descriptors - Retrieve all enrolled student face encodings for matching
 router.get('/descriptors', async (req, res) => {
   try {
-    const rows = await dbQuery(`
-      SELECT e.student_id, e.descriptor_json, s.name, s.roll_number, s.department, s.email
-      FROM face_embeddings e
-      JOIN students s ON e.student_id = s.student_id
-      WHERE s.face_enrolled = 1
-    `);
+    if (process.env.MONGODB_URI) {
+      const students = await StudentModel.find({ faceEnrolled: true });
+      const enrolled_students = students.map(s => ({
+        student_id: s.studentId,
+        studentId: s.studentId,
+        name: s.name,
+        roll_number: s.rollNumber,
+        rollNumber: s.rollNumber,
+        branch: s.branch,
+        semester: s.semester,
+        photo_path: s.photoPath,
+        descriptors: s.descriptors || [s.faceEncoding]
+      }));
+      return res.json({ success: true, count: enrolled_students.length, enrolled_students });
+    }
 
-    const grouped = {};
-    rows.forEach(row => {
-      if (!grouped[row.student_id]) {
-        grouped[row.student_id] = {
-          student_id: row.student_id,
-          name: row.name,
-          roll_number: row.roll_number,
-          department: row.department,
-          email: row.email,
-          descriptors: []
-        };
-      }
-      try {
-        const descArray = JSON.parse(row.descriptor_json);
-        grouped[row.student_id].descriptors.push(descArray);
-      } catch (e) {
-        // Skip malformed descriptors
-      }
-    });
+    // SQLite Fallback
+    const students = await dbQuery('SELECT * FROM students WHERE face_enrolled = 1');
+    const enrolled_students = [];
 
-    const result = Object.values(grouped);
-    res.json({ success: true, count: result.length, enrolled_students: result });
+    for (const student of students) {
+      const embeddings = await dbQuery(
+        'SELECT descriptor_json FROM face_embeddings WHERE student_id = ?',
+        [student.student_id]
+      );
+
+      const parsedDescriptors = [];
+      for (const emb of embeddings) {
+        try {
+          const arr = JSON.parse(emb.descriptor_json);
+          if (Array.isArray(arr)) parsedDescriptors.push(arr);
+        } catch (e) {}
+      }
+
+      if (parsedDescriptors.length > 0) {
+        enrolled_students.push({
+          student_id: student.student_id,
+          studentId: student.student_id,
+          name: student.name,
+          roll_number: student.roll_number,
+          rollNumber: student.roll_number,
+          branch: student.branch || student.department,
+          semester: student.semester || '1',
+          photo_path: student.photo_path || '',
+          descriptors: parsedDescriptors
+        });
+      }
+    }
+
+    res.json({ success: true, count: enrolled_students.length, enrolled_students });
   } catch (err) {
-    console.error('Error fetching face descriptors:', err);
-    res.status(500).json({ success: false, message: 'Database error fetching face descriptors' });
+    console.error('Error loading descriptors:', err);
+    res.status(500).json({ success: false, message: 'Failed to retrieve face descriptors' });
   }
 });
 

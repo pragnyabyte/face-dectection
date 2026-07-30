@@ -1,312 +1,314 @@
-// Global State Management
-const state = {
-  currentUser: { username: 'admin', role: 'admin', name: 'System Administrator' },
+// Global Application State
+const appState = {
+  token: localStorage.getItem('visioface_token') || null,
+  user: JSON.parse(localStorage.getItem('visioface_user') || 'null'),
   students: [],
-  enrolledFaces: [],
   attendanceLogs: [],
-  settings: {
-    confidenceThreshold: 85,
-    cooldownMinutes: 5,
-    blinkLiveness: true,
-    parentAlerts: true
-  }
+  charts: {}
 };
 
-// DOM Content Loaded Handler
+// Toast notification helper
+window.showToast = function(message, type = 'info') {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+
+  const toast = document.createElement('div');
+  toast.className = `toast-item toast-${type} animate-pop`;
+  
+  let icon = 'fa-circle-info';
+  if (type === 'success') icon = 'fa-circle-check';
+  if (type === 'warning') icon = 'fa-triangle-exclamation';
+  if (type === 'danger') icon = 'fa-circle-xmark';
+
+  toast.innerHTML = `
+    <i class="fa-solid ${icon} toast-icon"></i>
+    <span class="toast-message">${message}</span>
+    <button class="toast-close" onclick="this.parentElement.remove()">&times;</button>
+  `;
+
+  container.appendChild(toast);
+  setTimeout(() => {
+    toast.classList.add('fade-out');
+    setTimeout(() => toast.remove(), 400);
+  }, 4000);
+};
+
+// Switch Tab Navigation Helper
+window.switchTab = function(tabId) {
+  const links = document.querySelectorAll('.nav-link');
+  const views = document.querySelectorAll('.tab-view');
+
+  links.forEach(l => {
+    if (l.getAttribute('data-tab') === tabId) l.classList.add('active');
+    else l.classList.remove('active');
+  });
+
+  views.forEach(v => {
+    if (v.id === `view-${tabId}`) v.classList.add('active');
+    else v.classList.remove('active');
+  });
+
+  if (tabId === 'dashboard') loadDashboardStats();
+  if (tabId === 'students') loadStudentsDirectory();
+  if (tabId === 'attendance-history') loadAttendanceHistory();
+};
+
 document.addEventListener('DOMContentLoaded', () => {
   initClock();
-  initLoginHandlers();
+  initAuth();
   initNavigation();
   initThemeToggle();
   initModals();
-  checkExistingSession();
-
-  // Polling for live clock & notifications
-  setInterval(updateClock, 1000);
+  initExportHandlers();
 });
-
-let selectedRole = 'admin';
-let authMode = 'login'; // 'login' or 'signup'
-
-// Initialize Login & Sign Up Handlers
-function initLoginHandlers() {
-  // Log In / Sign Up Mode Switcher
-  const loginTabBtn = document.getElementById('tab-btn-login');
-  const signupTabBtn = document.getElementById('tab-btn-signup');
-  const switchModeBtn = document.getElementById('btn-switch-mode');
-  const alertBox = document.getElementById('login-alert-box');
-
-  function setAuthMode(mode) {
-    authMode = mode;
-    hideLoginAlert();
-
-    if (mode === 'login') {
-      loginTabBtn?.classList.add('active');
-      signupTabBtn?.classList.remove('active');
-      document.getElementById('form-login')?.classList.remove('hidden');
-      document.getElementById('form-signup')?.classList.add('hidden');
-      document.getElementById('auth-switch-prompt').textContent = "Don't have an account? ";
-      if (switchModeBtn) switchModeBtn.textContent = 'Sign Up Now';
-    } else {
-      signupTabBtn?.classList.add('active');
-      loginTabBtn?.classList.remove('active');
-      document.getElementById('form-signup')?.classList.remove('hidden');
-      document.getElementById('form-login')?.classList.add('hidden');
-      document.getElementById('auth-switch-prompt').textContent = 'Already have an account? ';
-      if (switchModeBtn) switchModeBtn.textContent = 'Log In Here';
-    }
-  }
-
-  loginTabBtn?.addEventListener('click', () => setAuthMode('login'));
-  signupTabBtn?.addEventListener('click', () => setAuthMode('signup'));
-  switchModeBtn?.addEventListener('click', () => setAuthMode(authMode === 'login' ? 'signup' : 'login'));
-
-  // Role Pill Switcher
-  const rolePills = document.querySelectorAll('.role-pill');
-  rolePills.forEach(pill => {
-    pill.addEventListener('click', () => {
-      rolePills.forEach(p => p.classList.remove('active'));
-      pill.classList.add('active');
-      selectedRole = pill.getAttribute('data-role');
-
-      const label = document.getElementById('login-user-label');
-      if (label) {
-        if (selectedRole === 'admin') label.textContent = 'Admin Username';
-        else if (selectedRole === 'teacher') label.textContent = 'Teacher Username';
-        else label.textContent = 'Student ID / Username';
-      }
-    });
-  });
-
-  // Password Visibility Toggle
-  document.getElementById('btn-toggle-password')?.addEventListener('click', () => {
-    const pwdInput = document.getElementById('login-password');
-    const icon = document.getElementById('btn-toggle-password').querySelector('i');
-    if (pwdInput.type === 'password') {
-      pwdInput.type = 'text';
-      icon.className = 'fa-solid fa-eye-slash';
-    } else {
-      pwdInput.type = 'password';
-      icon.className = 'fa-solid fa-eye';
-    }
-  });
-
-  // Log In Form Submission
-  document.getElementById('form-login')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    hideLoginAlert();
-
-    const username = document.getElementById('login-username').value.trim();
-    const password = document.getElementById('login-password').value;
-
-    if (!username || !password) {
-      showLoginAlert('Please enter both your username and password.');
-      return;
-    }
-
-    const res = await apiFetch('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ username, password, role: selectedRole })
-    });
-
-    if (res.success) {
-      state.currentUser = res.user;
-      localStorage.setItem('visioface_token', res.token);
-      localStorage.setItem('visioface_user', JSON.stringify(res.user));
-
-      showToast(`Welcome back, ${res.user.name}! Logged in as ${res.user.role.toUpperCase()}`, 'success');
-      launchAppForUser(res.user);
-    } else {
-      // Show specific error messages for invalid username vs wrong password
-      showLoginAlert(res.message || 'Authentication failed. Please verify credentials.');
-      showToast(res.message, 'danger');
-    }
-  });
-
-  // Sign Up Form Submission
-  document.getElementById('form-signup')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    hideLoginAlert();
-
-    const name = document.getElementById('signup-name').value.trim();
-    const username = document.getElementById('signup-username').value.trim();
-    const email = document.getElementById('signup-email').value.trim();
-    const password = document.getElementById('signup-password').value;
-
-    if (!name || !username || !password) {
-      showLoginAlert('Full Name, Username, and Password are required to Sign Up.');
-      return;
-    }
-
-    const res = await apiFetch('/api/auth/register', {
-      method: 'POST',
-      body: JSON.stringify({ name, username, email, password, role: selectedRole })
-    });
-
-    if (res.success) {
-      showToast(res.message, 'success');
-      document.getElementById('login-username').value = username;
-      document.getElementById('login-password').value = password;
-      setAuthMode('login');
-    } else {
-      showLoginAlert(res.message || 'Failed to create account.');
-      showToast(res.message, 'danger');
-    }
-  });
-
-  // Logout Handler (Refreshes view to Student Registration)
-  document.getElementById('btn-logout')?.addEventListener('click', () => {
-    showToast('Refreshed registration portal.', 'info');
-    switchTab('students');
-  });
-}
-
-function showLoginAlert(msg) {
-  const box = document.getElementById('login-alert-box');
-  const msgEl = document.getElementById('login-alert-msg');
-  if (box && msgEl) {
-    msgEl.textContent = msg;
-    box.classList.remove('hidden');
-  }
-}
-
-function hideLoginAlert() {
-  const box = document.getElementById('login-alert-box');
-  if (box) box.classList.add('hidden');
-}
-
-function quickFillLogin(username, password, role) {
-  const pill = document.querySelector(`.role-pill[data-role="${role}"]`);
-  if (pill) pill.click();
-}
-
-function checkExistingSession() {
-  const defaultAdmin = { username: 'admin', role: 'admin', name: 'System Administrator' };
-  state.currentUser = defaultAdmin;
-  launchAppForUser(defaultAdmin);
-}
-
-function launchAppForUser(user) {
-  const loginScreen = document.getElementById('login-screen');
-  if (loginScreen) loginScreen.classList.add('hidden');
-  const appEl = document.getElementById('app');
-  if (appEl) appEl.classList.remove('hidden');
-
-  const userEl = document.getElementById('current-user-name');
-  if (userEl) userEl.textContent = user.name || 'System Administrator';
-  const roleEl = document.getElementById('current-user-role');
-  if (roleEl) roleEl.textContent = (user.role || 'ADMIN').toUpperCase();
-
-  // Make all sidebar links visible
-  const navLinks = document.querySelectorAll('.nav-link');
-  navLinks.forEach(link => link.classList.remove('hidden'));
-
-  // Switch directly to Student Management & Registration tab
-  switchTab('students');
-  loadStudents();
-  loadDashboardStats();
-}
 
 // Live Clock Initializer
 function initClock() {
-  updateClock();
-}
+  function updateTime() {
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const dateStr = now.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 
-function updateClock() {
-  const now = new Date();
-  const timeEl = document.getElementById('live-time');
-  const dateEl = document.getElementById('live-date');
-  if (timeEl) timeEl.textContent = now.toLocaleTimeString('en-US');
-  if (dateEl) {
-    const options = { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' };
-    dateEl.textContent = now.toLocaleDateString('en-US', options);
+    const timeElem = document.getElementById('live-time');
+    const dateElem = document.getElementById('live-date');
+    if (timeElem) timeElem.textContent = timeStr;
+    if (dateElem) dateElem.textContent = dateStr;
   }
+  updateTime();
+  setInterval(updateTime, 1000);
 }
 
-// Navigation & Tab Switcher
-function initNavigation() {
-  const navLinks = document.querySelectorAll('.nav-link');
-  navLinks.forEach(link => {
-    link.addEventListener('click', (e) => {
-      const targetTab = link.getAttribute('data-tab');
-      switchTab(targetTab);
-    });
+// Authentication & Session Management
+function initAuth() {
+  const loginScreen = document.getElementById('login-screen');
+  const appContainer = document.getElementById('app');
+
+  // Check stored session token
+  if (appState.token && appState.user) {
+    loginScreen.classList.add('hidden');
+    appContainer.classList.remove('hidden');
+    document.getElementById('current-user-name').textContent = appState.user.name || 'System Admin';
+    loadDashboardStats();
+  } else {
+    loginScreen.classList.remove('hidden');
+    appContainer.classList.add('hidden');
+  }
+
+  // Auth Mode Switcher (Login vs Sign Up)
+  const tabLogin = document.getElementById('tab-btn-login');
+  const tabSignup = document.getElementById('tab-btn-signup');
+  const formLogin = document.getElementById('form-login');
+  const formSignup = document.getElementById('form-signup');
+
+  tabLogin?.addEventListener('click', () => {
+    tabLogin.classList.add('active');
+    tabSignup.classList.remove('active');
+    formLogin.classList.remove('hidden');
+    formSignup.classList.add('hidden');
   });
-}
 
-function switchTab(tabId) {
-  // Update sidebar buttons
-  document.querySelectorAll('.nav-link').forEach(btn => {
-    if (btn.getAttribute('data-tab') === tabId) {
-      btn.classList.add('active');
-    } else {
-      btn.classList.remove('active');
+  tabSignup?.addEventListener('click', () => {
+    tabSignup.classList.add('active');
+    tabLogin.classList.remove('active');
+    formSignup.classList.remove('hidden');
+    formLogin.classList.add('hidden');
+  });
+
+  // Login Submit
+  formLogin?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const username = document.getElementById('login-username').value.trim();
+    const password = document.getElementById('login-password').value;
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        appState.token = data.token;
+        appState.user = data.user;
+        localStorage.setItem('visioface_token', data.token);
+        localStorage.setItem('visioface_user', JSON.stringify(data.user));
+
+        loginScreen.classList.add('hidden');
+        appContainer.classList.remove('hidden');
+        document.getElementById('current-user-name').textContent = data.user.name;
+
+        window.showToast(`Welcome back, ${data.user.name}!`, 'success');
+        loadDashboardStats();
+      } else {
+        const alertBox = document.getElementById('login-alert-box');
+        document.getElementById('login-alert-msg').textContent = data.message || 'Invalid credentials';
+        alertBox.classList.remove('hidden');
+      }
+    } catch (err) {
+      window.showToast('Server connection error during login.', 'danger');
     }
   });
 
-  // Hide all tab views and show target view
-  document.querySelectorAll('.tab-view').forEach(view => {
-    view.classList.remove('active');
-  });
+  // Logout Submit
+  document.getElementById('btn-logout')?.addEventListener('click', () => {
+    localStorage.removeItem('visioface_token');
+    localStorage.removeItem('visioface_user');
+    appState.token = null;
+    appState.user = null;
 
-  const activeView = document.getElementById(`view-${tabId}`);
-  if (activeView) {
-    activeView.classList.add('active');
-  }
-
-  // Trigger tab-specific initialization hooks
-  if (tabId === 'dashboard') {
-    loadDashboardStats();
-  } else if (tabId === 'students') {
-    loadStudents();
-  } else if (tabId === 'attendance-logs') {
-    loadAttendanceLogs();
-  } else if (tabId === 'reports') {
-    if (window.renderReports) window.renderReports();
-  }
-}
-
-// Dark/Light Theme Toggle
-function initThemeToggle() {
-  const toggleBtn = document.getElementById('btn-theme-toggle');
-  if (!toggleBtn) return;
-  
-  toggleBtn.addEventListener('click', () => {
-    const currentTheme = document.documentElement.getAttribute('data-theme');
-    const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
-    document.documentElement.setAttribute('data-theme', newTheme);
-    toggleBtn.innerHTML = newTheme === 'dark' ? '<i class="fa-solid fa-moon"></i>' : '<i class="fa-solid fa-sun"></i>';
-    showToast(`Switched to ${newTheme} theme mode`, 'info');
+    loginScreen.classList.remove('hidden');
+    appContainer.classList.add('hidden');
+    window.showToast('Logged out successfully.', 'info');
   });
 }
 
-// API Helper
-async function apiFetch(endpoint, options = {}) {
-  try {
-    const response = await fetch(endpoint, {
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers
-      },
-      ...options
+// Navigation Tab Switchers
+function initNavigation() {
+  const links = document.querySelectorAll('.nav-link');
+  links.forEach(link => {
+    link.addEventListener('click', () => {
+      const tabId = link.getAttribute('data-tab');
+      switchTab(tabId);
     });
-    return await response.json();
+  });
+}
+
+// Theme Switcher (Dark / Light)
+function initThemeToggle() {
+  const btn = document.getElementById('btn-theme-toggle');
+  btn?.addEventListener('click', () => {
+    const html = document.documentElement;
+    const currentTheme = html.getAttribute('data-theme') || 'dark';
+    const nextTheme = currentTheme === 'dark' ? 'light' : 'dark';
+    html.setAttribute('data-theme', nextTheme);
+    btn.querySelector('i').className = nextTheme === 'dark' ? 'fa-solid fa-moon' : 'fa-solid fa-sun';
+  });
+}
+
+// Modal Backdrop Handlers
+function initModals() {
+  document.querySelectorAll('[data-close]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const modalId = btn.getAttribute('data-close');
+      document.getElementById(modalId)?.classList.remove('show');
+    });
+  });
+
+  document.getElementById('btn-open-add-student-modal')?.addEventListener('click', () => {
+    if (window.faceEngine) {
+      window.faceEngine.openRegisterWizard();
+    }
+  });
+}
+
+// Dashboard Analytics & Charts
+async function loadDashboardStats() {
+  try {
+    const res = await fetch('/api/reports/dashboard');
+    const data = await res.json();
+
+    if (data.success) {
+      const stats = data.stats;
+      document.getElementById('kpi-total-students').textContent = stats.totalStudents;
+      document.getElementById('kpi-present-today').textContent = stats.presentToday;
+      document.getElementById('kpi-absent-today').textContent = stats.absentToday;
+      document.getElementById('kpi-late-sub').textContent = `${stats.lateToday} Late Arrivals`;
+      document.getElementById('kpi-rate').textContent = `${stats.attendancePercentage}%`;
+      document.getElementById('kpi-rate-fill').style.width = `${stats.attendancePercentage}%`;
+
+      // Live Counters on Attendance Panel
+      document.getElementById('counter-present').textContent = stats.presentToday;
+      document.getElementById('counter-absent').textContent = stats.absentToday;
+      document.getElementById('counter-late').textContent = stats.lateToday;
+
+      renderDailyTrendChart(data.trend);
+      renderBranchBreakdownChart(data.departments);
+    }
   } catch (err) {
-    console.error(`API Fetch Error (${endpoint}):`, err);
-    showToast('Network error contacting server', 'danger');
-    return { success: false, message: 'Network failure' };
+    console.error('Error loading dashboard stats:', err);
   }
 }
 
-// Load Students Directory
-async function loadStudents() {
-  const deptFilter = document.getElementById('student-dept-filter')?.value || 'All';
-  const search = document.getElementById('student-search-input')?.value || '';
+function renderDailyTrendChart(trendData) {
+  const ctx = document.getElementById('chart-daily-trend')?.getContext('2d');
+  if (!ctx) return;
 
-  const res = await apiFetch(`/api/students?department=${encodeURIComponent(deptFilter)}&search=${encodeURIComponent(search)}`);
-  if (res.success) {
-    state.students = res.students;
-    renderStudentsTable(state.students);
+  if (appState.charts.dailyTrend) appState.charts.dailyTrend.destroy();
+
+  const labels = trendData.map(t => t.day);
+  const presents = trendData.map(t => t.present);
+
+  appState.charts.dailyTrend = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Present Students',
+        data: presents,
+        borderColor: '#22c55e',
+        backgroundColor: 'rgba(34, 197, 94, 0.15)',
+        fill: true,
+        tension: 0.4,
+        borderWidth: 3
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.08)' } },
+        x: { grid: { display: false } }
+      }
+    }
+  });
+}
+
+function renderBranchBreakdownChart(deptData) {
+  const ctx = document.getElementById('chart-branch-pie')?.getContext('2d');
+  if (!ctx) return;
+
+  if (appState.charts.branchPie) appState.charts.branchPie.destroy();
+
+  const labels = deptData.map(d => d.branch || d.department);
+  const presents = deptData.map(d => d.present);
+
+  appState.charts.branchPie = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{
+        data: presents,
+        backgroundColor: ['#3b82f6', '#22c55e', '#a855f7', '#eab308', '#ec4899', '#06b6d4'],
+        borderWidth: 2
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom' } }
+    }
+  });
+}
+
+// Student Directory Loader & Actions
+async function loadStudentsDirectory() {
+  const search = document.getElementById('student-search-input')?.value || '';
+  const branch = document.getElementById('student-branch-filter')?.value || 'All';
+  const semester = document.getElementById('student-semester-filter')?.value || 'All';
+
+  try {
+    const query = new URLSearchParams({ search, branch, semester });
+    const res = await fetch(`/api/students?${query.toString()}`);
+    const data = await res.json();
+
+    if (data.success) {
+      appState.students = data.students || [];
+      renderStudentsTable(appState.students);
+    }
+  } catch (err) {
+    console.error('Error loading students:', err);
   }
 }
 
@@ -315,352 +317,191 @@ function renderStudentsTable(students) {
   if (!tbody) return;
 
   if (students.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" class="text-center py-4 text-muted">No students found matching your criteria.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9" class="text-center p-4 text-muted">No students found matching filters.</td></tr>`;
     return;
   }
 
-  tbody.innerHTML = students.map(s => `
-    <tr>
-      <td><span class="fw-bold text-accent">${s.student_id}</span></td>
-      <td>
-        <div class="d-flex align-items-center gap-2">
-          <i class="fa-solid fa-circle-user text-muted"></i>
-          <span class="fw-semibold">${s.name}</span>
-        </div>
-      </td>
-      <td>${s.roll_number}</td>
-      <td><span class="badge bg-info">${s.department}</span></td>
-      <td>${s.email || s.phone || 'N/A'}</td>
-      <td>
-        ${s.face_enrolled 
-          ? '<span class="badge bg-success"><i class="fa-solid fa-check me-1"></i> Enrolled</span>' 
-          : '<span class="badge bg-warning"><i class="fa-solid fa-triangle-exclamation me-1"></i> Pending</span>'}
-      </td>
-      <td>
-        <button class="btn btn-sm btn-outline me-1" onclick="openEnrollForStudent('${s.student_id}')" title="Enroll Face">
-          <i class="fa-solid fa-camera"></i>
-        </button>
-        <button class="btn btn-sm btn-danger" onclick="deleteStudent('${s.student_id}')" title="Delete Student">
-          <i class="fa-solid fa-trash"></i>
-        </button>
-      </td>
-    </tr>
-  `).join('');
+  tbody.innerHTML = students.map(s => {
+    const sId = s.studentId || s.student_id;
+    const rNum = s.rollNumber || s.roll_number;
+    const regNum = s.registrationNumber || s.registration_number || `REG-${rNum}`;
+    const branch = s.branch || s.department || 'Computer Science';
+    const sem = s.semester || 'Semester 1';
+    const sec = s.section || 'A';
+    const photo = s.photoPath || s.photo_path;
+    const isEnrolled = s.faceEnrolled || s.face_enrolled;
+
+    const photoHtml = photo 
+      ? `<img src="/${photo}" class="student-avatar-thumb" alt="${s.name}" />`
+      : `<div class="student-avatar-placeholder">${s.name.charAt(0)}</div>`;
+
+    const statusBadge = isEnrolled 
+      ? `<span class="badge bg-success"><i class="fa-solid fa-face-smile me-1"></i> Face Enrolled</span>`
+      : `<span class="badge bg-warning text-dark"><i class="fa-solid fa-exclamation-triangle me-1"></i> Pending Capture</span>`;
+
+    return `
+      <tr>
+        <td>${photoHtml}</td>
+        <td class="fw-bold">${s.name}</td>
+        <td><code>${rNum}</code></td>
+        <td><small>${regNum}</small></td>
+        <td>${branch}</td>
+        <td>${sem} (${sec})</td>
+        <td>${s.mobile || s.phone || 'N/A'}</td>
+        <td>${statusBadge}</td>
+        <td>
+          <button class="btn btn-sm btn-outline-danger" onclick="deleteStudent('${sId}')" title="Delete Student">
+            <i class="fa-solid fa-trash"></i>
+          </button>
+        </td>
+      </tr>
+    `;
+  }).join('');
 }
 
-// Delete Student
-async function deleteStudent(studentId) {
-  if (!confirm(`Are you sure you want to delete student ${studentId}?`)) return;
+// Student Directory Search Event Listeners
+document.getElementById('student-search-input')?.addEventListener('input', loadStudentsDirectory);
+document.getElementById('student-branch-filter')?.addEventListener('change', loadStudentsDirectory);
+document.getElementById('student-semester-filter')?.addEventListener('change', loadStudentsDirectory);
 
-  const res = await apiFetch(`/api/students/${studentId}`, { method: 'DELETE' });
-  if (res.success) {
-    showToast(`Student ${studentId} deleted successfully`, 'success');
-    loadStudents();
-    loadDashboardStats();
-  } else {
-    showToast(res.message || 'Failed to delete student', 'danger');
-  }
-}
+window.deleteStudent = async function(sId) {
+  if (!confirm(`Are you sure you want to delete student ${sId}?`)) return;
 
-// Load Dashboard Statistics
-async function loadDashboardStats() {
-  const res = await apiFetch('/api/reports/dashboard');
-  if (res.success) {
-    const { stats, recentActivity } = res;
-    document.getElementById('kpi-total-students').textContent = stats.totalStudents;
-    document.getElementById('kpi-present-today').textContent = stats.presentToday;
-    document.getElementById('kpi-absent-today').textContent = stats.absentToday;
-    document.getElementById('kpi-late-sub').textContent = `${stats.lateToday} Late Arrivals`;
-    document.getElementById('kpi-rate').textContent = `${stats.attendancePercentage}%`;
-    document.getElementById('kpi-rate-fill').style.width = `${stats.attendancePercentage}%`;
-
-    // Render Recent Feed
-    const feedContainer = document.getElementById('dashboard-feed-list');
-    if (feedContainer) {
-      if (recentActivity.length === 0) {
-        feedContainer.innerHTML = `<div class="feed-empty">No attendance scans recorded today yet.</div>`;
-      } else {
-        feedContainer.innerHTML = recentActivity.map(item => `
-          <div class="feed-item">
-            <div class="feed-left">
-              <div class="feed-avatar">
-                <i class="fa-solid fa-user"></i>
-              </div>
-              <div class="feed-info">
-                <span class="feed-title">${item.name} (${item.student_id})</span>
-                <span class="feed-time">${item.department} | ${item.mode}</span>
-              </div>
-            </div>
-            <div>
-              <span class="badge ${item.status === 'Present' ? 'bg-success' : 'bg-warning'}">${item.status} - ${item.time}</span>
-            </div>
-          </div>
-        `).join('');
-      }
-    }
-
-    // Render Trend Chart if Chart.js is ready
-    if (window.renderTrendChart) window.renderTrendChart(res.trend);
-  }
-}
-
-// Load Attendance Logs with Filters
-async function loadAttendanceLogs() {
-  const date = document.getElementById('log-date-filter')?.value || '';
-  const dept = document.getElementById('log-dept-filter')?.value || 'All';
-  const status = document.getElementById('log-status-filter')?.value || 'All';
-
-  const res = await apiFetch(`/api/attendance/history?date=${encodeURIComponent(date)}&department=${encodeURIComponent(dept)}&status=${encodeURIComponent(status)}`);
-  if (res.success) {
-    state.attendanceLogs = res.logs;
-    const tbody = document.getElementById('logs-table-body');
-    if (!tbody) return;
-
-    if (res.logs.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="8" class="text-center py-4 text-muted"><i class="fa-solid fa-circle-exclamation me-2 text-warning"></i> No attendance records found for selected date, department, or status filters.</td></tr>`;
-      return;
-    }
-
-    tbody.innerHTML = res.logs.map(log => {
-      let statusBadge = '<span class="badge bg-success"><i class="fa-solid fa-right-to-bracket me-1"></i> Present</span>';
-      if (log.status === 'Check-Out') {
-        statusBadge = '<span class="badge bg-danger"><i class="fa-solid fa-right-from-bracket me-1"></i> Check-Out</span>';
-      } else if (log.status === 'Late') {
-        statusBadge = '<span class="badge bg-warning"><i class="fa-solid fa-clock me-1"></i> Late</span>';
-      } else if (log.status === 'Absent') {
-        statusBadge = '<span class="badge bg-secondary"><i class="fa-solid fa-user-xmark me-1"></i> Absent</span>';
-      }
-
-      return `
-        <tr>
-          <td class="fw-semibold">${log.date}</td>
-          <td>${log.time}</td>
-          <td><span class="fw-bold text-accent">${log.student_id}</span></td>
-          <td class="fw-semibold">${log.name}</td>
-          <td><span class="badge bg-info">${log.department}</span></td>
-          <td>${statusBadge}</td>
-          <td>${log.mode}</td>
-          <td>${log.confidence || 98.5}%</td>
-        </tr>
-      `;
-    }).join('');
-  }
-}
-
-// Modals & Filters Management
-function initFilterHandlers() {
-  // Filter Apply Button
-  document.getElementById('btn-apply-log-filters')?.addEventListener('click', () => {
-    loadAttendanceLogs();
-    showToast('Applied attendance log filters', 'info');
-  });
-
-  // Filter Reset Button
-  document.getElementById('btn-reset-log-filters')?.addEventListener('click', () => {
-    const dateInput = document.getElementById('log-date-filter');
-    const deptSelect = document.getElementById('log-dept-filter');
-    const statusSelect = document.getElementById('log-status-filter');
-    if (dateInput) dateInput.value = '';
-    if (deptSelect) deptSelect.value = 'All';
-    if (statusSelect) statusSelect.value = 'All';
-    loadAttendanceLogs();
-    showToast('Cleared attendance log filters', 'info');
-  });
-
-  // Instant Change Filter Listeners
-  ['log-date-filter', 'log-dept-filter', 'log-status-filter'].forEach(id => {
-    document.getElementById(id)?.addEventListener('change', () => loadAttendanceLogs());
-  });
-
-  // Check-In vs Check-Out Scan Mode Pills
-  const modePills = document.querySelectorAll('.scan-mode-pill-box .mode-pill');
-  modePills.forEach(pill => {
-    pill.addEventListener('click', () => {
-      modePills.forEach(p => p.classList.remove('active'));
-      pill.classList.add('active');
-      const scanMode = pill.getAttribute('data-mode');
-      if (window.faceEngine) window.faceEngine.scanMode = scanMode;
-      showToast(`Camera scanner mode set to: ${scanMode.toUpperCase()}`, scanMode === 'Check-Out' ? 'warning' : 'success');
-    });
-  });
-}
-
-function initModals() {
-  initFilterHandlers();
-
-  // Add Student Modal Open
-  const addBtn = document.getElementById('btn-open-add-student-modal');
-  if (addBtn) {
-    addBtn.addEventListener('click', () => {
-      document.getElementById('modal-add-student').classList.add('show');
-    });
-  }
-
-  // Manual Attendance Modal Open
-  const manualBtn = document.getElementById('btn-open-manual-modal');
-  if (manualBtn) {
-    manualBtn.addEventListener('click', () => {
-      populateManualStudentSelect();
-      document.getElementById('modal-manual-attendance').classList.add('show');
-    });
-  }
-
-  // Close buttons
-  document.querySelectorAll('[data-close]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const modalId = btn.getAttribute('data-close');
-      document.getElementById(modalId)?.classList.remove('show');
-    });
-  });
-
-  // Save Student Form Handler
-  document.getElementById('btn-save-student')?.addEventListener('click', async () => {
-    const student_id = document.getElementById('modal-student-id').value.trim();
-    const name = document.getElementById('modal-student-name').value.trim();
-    const roll_number = document.getElementById('modal-student-roll').value.trim();
-    const department = document.getElementById('modal-student-dept').value;
-    const email = document.getElementById('modal-student-email').value.trim();
-    const phone = document.getElementById('modal-student-phone').value.trim();
-
-    if (!student_id || !name || !roll_number) {
-      showToast('Please fill all required student fields', 'warning');
-      return;
-    }
-
-    const res = await apiFetch('/api/students', {
-      method: 'POST',
-      body: JSON.stringify({ student_id, name, roll_number, department, email, phone })
-    });
-
-    if (res.success) {
-      showToast('Student registered successfully!', 'success');
-      document.getElementById('modal-add-student').classList.remove('show');
-      loadStudents();
+  try {
+    const res = await fetch(`/api/students/${sId}`, { method: 'DELETE' });
+    const data = await res.json();
+    if (data.success) {
+      window.showToast('Student record deleted successfully.', 'success');
+      loadStudentsDirectory();
       loadDashboardStats();
     } else {
-      showToast(res.message || 'Failed to save student', 'danger');
+      window.showToast(data.message || 'Failed to delete student.', 'danger');
     }
-  });
+  } catch (err) {
+    window.showToast('Server error deleting student.', 'danger');
+  }
+};
 
-  // Save Manual Attendance Handler
-  document.getElementById('btn-submit-manual-attendance')?.addEventListener('click', async () => {
-    const student_id = document.getElementById('manual-student-select').value;
-    const date = document.getElementById('manual-date-input').value;
-    const status = document.getElementById('manual-status-select').value;
+// Attendance History Loader & Filters
+async function loadAttendanceHistory() {
+  const date = document.getElementById('history-date-filter')?.value || '';
+  const branch = document.getElementById('history-branch-filter')?.value || 'All';
+  const semester = document.getElementById('history-semester-filter')?.value || 'All';
+  const status = document.getElementById('history-status-filter')?.value || 'All';
 
-    if (!student_id) {
-      showToast('Select a student first', 'warning');
+  try {
+    const query = new URLSearchParams({ date, branch, semester, status });
+    const res = await fetch(`/api/attendance/history?${query.toString()}`);
+    const data = await res.json();
+
+    if (data.success) {
+      appState.attendanceLogs = data.logs || [];
+      renderAttendanceHistoryTable(appState.attendanceLogs);
+    }
+  } catch (err) {
+    console.error('Error loading attendance history:', err);
+  }
+}
+
+function renderAttendanceHistoryTable(logs) {
+  const tbody = document.getElementById('history-table-body');
+  if (!tbody) return;
+
+  if (logs.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" class="text-center p-4 text-muted">No attendance logs found for selected criteria.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = logs.map(l => {
+    const rNum = l.rollNumber || l.roll_number;
+    const sId = l.studentId || l.student_id;
+    const branch = l.branch || l.department || 'Computer Science';
+    const device = l.device || l.mode || 'Webcam';
+    const conf = l.confidence ? `${l.confidence}%` : '98.5%';
+
+    let statusBadge = '<span class="badge bg-success">Present</span>';
+    if (l.status === 'Late') statusBadge = '<span class="badge bg-warning text-dark">Late</span>';
+    if (l.status === 'Absent') statusBadge = '<span class="badge bg-danger">Absent</span>';
+
+    return `
+      <tr>
+        <td>${l.date}</td>
+        <td class="fw-bold">${l.time}</td>
+        <td><code>${sId}</code></td>
+        <td>${l.name}</td>
+        <td><code>${rNum}</code></td>
+        <td>${branch}</td>
+        <td>${statusBadge}</td>
+        <td><i class="fa-solid fa-video text-accent me-1"></i> ${device}</td>
+        <td><strong class="text-success">${conf}</strong></td>
+      </tr>
+    `;
+  }).join('');
+}
+
+document.getElementById('btn-apply-history-filters')?.addEventListener('click', loadAttendanceHistory);
+document.getElementById('btn-reset-history-filters')?.addEventListener('click', () => {
+  document.getElementById('history-date-filter').value = '';
+  document.getElementById('history-branch-filter').value = 'All';
+  document.getElementById('history-semester-filter').value = 'All';
+  document.getElementById('history-status-filter').value = 'All';
+  loadAttendanceHistory();
+});
+
+// Export Handlers (Excel, CSV, PDF, Print)
+function initExportHandlers() {
+  // Export Excel (.xlsx using SheetJS)
+  document.getElementById('btn-export-excel')?.addEventListener('click', () => {
+    if (appState.attendanceLogs.length === 0) {
+      window.showToast('No attendance logs to export.', 'warning');
       return;
     }
+    const excelData = appState.attendanceLogs.map(l => ({
+      Date: l.date,
+      Time: l.time,
+      'Student ID': l.studentId || l.student_id,
+      Name: l.name,
+      'Roll Number': l.rollNumber || l.roll_number,
+      Branch: l.branch || l.department,
+      Status: l.status,
+      Device: l.device || 'Webcam',
+      Confidence: `${l.confidence || 98.5}%`
+    }));
 
-    const res = await apiFetch('/api/attendance/manual', {
-      method: 'POST',
-      body: JSON.stringify({ student_id, date, status })
-    });
-
-    if (res.success) {
-      showToast(res.message, 'success');
-      document.getElementById('modal-manual-attendance').classList.remove('show');
-      loadAttendanceLogs();
-      loadDashboardStats();
-    } else {
-      showToast(res.message || 'Failed to record manual entry', 'danger');
-    }
+    const worksheet = XLSX.utils.json_to_sheet(excelData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, 'Attendance Report');
+    XLSX.writeFile(workbook, `Attendance_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+    window.showToast('Excel report downloaded successfully!', 'success');
   });
 
-  // Save Quick Enrollment Handler (from Camera Scan)
-  document.getElementById('btn-save-quick-enroll')?.addEventListener('click', async () => {
-    const student_id = document.getElementById('quick-student-id').value.trim();
-    const name = document.getElementById('quick-name').value.trim();
-    const roll_number = document.getElementById('quick-roll').value.trim();
-    const department = document.getElementById('quick-dept').value;
-    const email = document.getElementById('quick-email').value.trim();
-    const mark_attendance = document.getElementById('quick-mark-attendance').checked;
+  // Export CSV Download
+  document.getElementById('btn-export-csv')?.addEventListener('click', () => {
+    const date = document.getElementById('history-date-filter')?.value || '';
+    const branch = document.getElementById('history-branch-filter')?.value || 'All';
+    window.location.href = `/api/reports/export/csv?date=${date}&branch=${branch}`;
+    window.showToast('Downloading CSV report...', 'info');
+  });
 
-    if (!student_id || !name || !roll_number) {
-      showToast('Please fill all required student fields', 'warning');
-      return;
-    }
+  // Export PDF using html2pdf
+  document.getElementById('btn-export-pdf')?.addEventListener('click', () => {
+    const element = document.getElementById('history-printable-area');
+    if (!element) return;
 
-    const capturedData = window.faceEngine?.currentCapturedData;
-    if (!capturedData) {
-      showToast('No captured face data found. Please capture from camera first.', 'danger');
-      return;
-    }
+    const opt = {
+      margin: 0.5,
+      filename: `Attendance_Report_${new Date().toISOString().split('T')[0]}.pdf`,
+      image: { type: 'jpeg', quality: 0.98 },
+      html2canvas: { scale: 2 },
+      jsPDF: { unit: 'in', format: 'letter', orientation: 'landscape' }
+    };
 
-    const res = await apiFetch('/api/face/enroll', {
-      method: 'POST',
-      body: JSON.stringify({
-        student_id,
-        name,
-        roll_number,
-        department,
-        email,
-        descriptors: capturedData.descriptors,
-        sample_image_base64: capturedData.base64Image,
-        mark_attendance
-      })
-    });
+    window.html2pdf().set(opt).from(element).save();
+    window.showToast('PDF report exported successfully!', 'success');
+  });
 
-    if (res.success) {
-      showToast(res.message, 'success');
-      document.getElementById('modal-quick-enroll').classList.remove('show');
-
-      if (window.faceEngine) {
-        window.faceEngine.playSuccessChime();
-        window.faceEngine.loadEnrolledDescriptors();
-      }
-
-      loadStudents();
-      loadDashboardStats();
-      loadAttendanceLogs();
-      if (window.renderReports) window.renderReports();
-    } else {
-      showToast(res.message || 'Failed to register student and mark attendance.', 'danger');
-    }
+  // Print Window
+  document.getElementById('btn-print-history')?.addEventListener('click', () => {
+    window.print();
   });
 }
-
-function populateManualStudentSelect() {
-  const select = document.getElementById('manual-student-select');
-  if (!select) return;
-  select.innerHTML = `<option value="">-- Choose Student --</option>` +
-    state.students.map(s => `<option value="${s.student_id}">${s.name} (${s.student_id})</option>`).join('');
-
-  const dateInput = document.getElementById('manual-date-input');
-  if (dateInput) dateInput.value = new Date().toISOString().split('T')[0];
-}
-
-function openEnrollForStudent(studentId) {
-  switchTab('live-scanner');
-  showToast(`Position face in camera scanner for student ${studentId}`, 'info');
-}
-
-// Toast Notification Toast Generator
-function showToast(message, type = 'info') {
-  const container = document.getElementById('toast-container');
-  if (!container) return;
-
-  const toast = document.createElement('div');
-  toast.className = `toast ${type}`;
-  
-  let icon = 'fa-info-circle';
-  if (type === 'success') icon = 'fa-circle-check text-success';
-  if (type === 'danger') icon = 'fa-circle-xmark text-danger';
-  if (type === 'warning') icon = 'fa-triangle-exclamation text-warning';
-
-  toast.innerHTML = `<i class="fa-solid ${icon}"></i> <span>${message}</span>`;
-  container.appendChild(toast);
-
-  setTimeout(() => {
-    toast.style.opacity = '0';
-    toast.style.transform = 'translateX(100%)';
-    setTimeout(() => toast.remove(), 300);
-  }, 4000);
-}
-
-window.showToast = showToast;
-window.switchTab = switchTab;
-window.openEnrollForStudent = openEnrollForStudent;
-window.deleteStudent = deleteStudent;
-window.quickFillLogin = quickFillLogin;

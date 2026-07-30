@@ -2,11 +2,85 @@ const express = require('express');
 const router = express.Router();
 const { dbQuery, dbGet } = require('../db/database');
 
+let StudentModel = null;
+let AttendanceModel = null;
+try {
+  StudentModel = require('../models/Student');
+  AttendanceModel = require('../models/Attendance');
+} catch (e) {}
+
 // GET /api/reports/dashboard - Summary stats and chart metrics
 router.get('/dashboard', async (req, res) => {
   try {
     const today = new Date().toISOString().split('T')[0];
 
+    if (process.env.MONGODB_URI) {
+      const totalStudents = await StudentModel.countDocuments();
+      const presentLogs = await AttendanceModel.find({ date: today, status: { $in: ['Present', 'Late'] } });
+      
+      const presentStudentIds = new Set(presentLogs.map(l => l.studentId));
+      const presentToday = presentStudentIds.size;
+      const lateToday = presentLogs.filter(l => l.status === 'Late').length;
+      const absentToday = Math.max(0, totalStudents - presentToday);
+      const attendancePercentage = totalStudents > 0 ? ((presentToday / totalStudents) * 100).toFixed(1) : 0;
+
+      // Branch breakdown
+      const students = await StudentModel.find();
+      const branchMap = {};
+      students.forEach(s => {
+        const b = s.branch || 'General';
+        if (!branchMap[b]) branchMap[b] = { total: 0, present: 0 };
+        branchMap[b].total++;
+        if (presentStudentIds.has(s.studentId)) {
+          branchMap[b].present++;
+        }
+      });
+
+      const deptStats = Object.keys(branchMap).map(b => ({
+        department: b,
+        branch: b,
+        total: branchMap[b].total,
+        present: branchMap[b].present,
+        absent: Math.max(0, branchMap[b].total - branchMap[b].present),
+        percentage: branchMap[b].total > 0 ? ((branchMap[b].present / branchMap[b].total) * 100).toFixed(1) : 0
+      }));
+
+      // 7-day trend
+      const trend = [];
+      for (let i = 6; i >= 0; i--) {
+        const dDate = new Date(Date.now() - i * 86400000).toISOString().split('T')[0];
+        const dayLogs = await AttendanceModel.find({ date: dDate, status: { $in: ['Present', 'Late'] } });
+        const dayPresentIds = new Set(dayLogs.map(l => l.studentId));
+        const dayName = new Date(dDate).toLocaleDateString('en-US', { weekday: 'short' });
+        trend.push({
+          date: dDate,
+          day: dayName,
+          present: dayPresentIds.size,
+          total: totalStudents
+        });
+      }
+
+      // Recent activity
+      const recentActivity = await AttendanceModel.find({ date: today })
+        .sort({ timestamp: -1 })
+        .limit(10);
+
+      return res.json({
+        success: true,
+        stats: {
+          totalStudents,
+          presentToday,
+          lateToday,
+          absentToday,
+          attendancePercentage
+        },
+        departments: deptStats,
+        trend,
+        recentActivity
+      });
+    }
+
+    // SQLite Fallback
     const totalStudentsRow = await dbGet('SELECT COUNT(*) as count FROM students');
     const totalStudents = totalStudentsRow ? totalStudentsRow.count : 0;
 
@@ -25,25 +99,27 @@ router.get('/dashboard', async (req, res) => {
     const absentToday = Math.max(0, totalStudents - presentToday);
     const attendancePercentage = totalStudents > 0 ? ((presentToday / totalStudents) * 100).toFixed(1) : 0;
 
-    // Department breakdown
+    // Department / Branch breakdown
     const deptRows = await dbQuery(`
-      SELECT department, COUNT(*) as total_students
+      SELECT COALESCE(branch, department) as branch_name, COUNT(*) as total_students
       FROM students
-      GROUP BY department
+      GROUP BY branch_name
     `);
 
     const deptStats = [];
     for (const d of deptRows) {
+      const bName = d.branch_name || 'General';
       const pRow = await dbGet(`
         SELECT COUNT(DISTINCT a.student_id) as present_count
         FROM attendance a
         JOIN students s ON a.student_id = s.student_id
-        WHERE a.date = ? AND s.department = ? AND a.status IN ("Present", "Late")
-      `, [today, d.department]);
+        WHERE a.date = ? AND (s.branch = ? OR s.department = ?) AND a.status IN ("Present", "Late")
+      `, [today, bName, bName]);
 
       const present = pRow ? pRow.present_count : 0;
       deptStats.push({
-        department: d.department,
+        department: bName,
+        branch: bName,
         total: d.total_students,
         present,
         absent: Math.max(0, d.total_students - present),
@@ -68,9 +144,9 @@ router.get('/dashboard', async (req, res) => {
       });
     }
 
-    // Recent activity stream
+    // Recent activity
     const recentActivity = await dbQuery(`
-      SELECT a.id, a.student_id, a.time, a.status, a.mode, s.name, s.department
+      SELECT a.id, a.student_id, a.date, a.time, a.status, a.mode, s.name, COALESCE(s.branch, s.department) as branch, s.roll_number
       FROM attendance a
       JOIN students s ON a.student_id = s.student_id
       WHERE a.date = ?
@@ -96,41 +172,67 @@ router.get('/dashboard', async (req, res) => {
   }
 });
 
-// GET /api/reports/export/csv - Download CSV report
+// GET /api/reports/export/csv - Export CSV file download
 router.get('/export/csv', async (req, res) => {
   try {
-    const { date, department } = req.query;
-    let sql = `
-      SELECT a.date, a.time, a.student_id, s.name, s.roll_number, s.department, a.status, a.mode, a.confidence
-      FROM attendance a
-      JOIN students s ON a.student_id = s.student_id
-      WHERE 1=1
-    `;
-    let params = [];
+    const { date, branch, semester } = req.query;
+    let records = [];
 
-    if (date) {
-      sql += ' AND a.date = ?';
-      params.push(date);
+    if (process.env.MONGODB_URI) {
+      const query = {};
+      if (date) query.date = date;
+      if (branch && branch !== 'All') query.branch = branch;
+      if (semester && semester !== 'All') query.semester = semester;
+      records = await AttendanceModel.find(query).sort({ timestamp: -1 });
+    } else {
+      let sql = `
+        SELECT a.date, a.time, a.status, a.confidence, s.student_id, s.name, s.roll_number, COALESCE(s.branch, s.department) as branch, s.semester, s.section, s.mobile
+        FROM attendance a
+        JOIN students s ON a.student_id = s.student_id
+        WHERE 1=1
+      `;
+      let params = [];
+
+      if (date) {
+        sql += ' AND a.date = ?';
+        params.push(date);
+      }
+      if (branch && branch !== 'All') {
+        sql += ' AND (s.branch = ? OR s.department = ?)';
+        params.push(branch, branch);
+      }
+      if (semester && semester !== 'All') {
+        sql += ' AND s.semester = ?';
+        params.push(semester);
+      }
+
+      sql += ' ORDER BY a.timestamp DESC';
+      records = await dbQuery(sql, params);
     }
-    if (department && department !== 'All') {
-      sql += ' AND s.department = ?';
-      params.push(department);
-    }
 
-    sql += ' ORDER BY a.date DESC, a.time ASC';
-    const rows = await dbQuery(sql, params);
+    let csvContent = 'Date,Time,Student ID,Student Name,Roll Number,Branch,Semester,Section,Status,Confidence\n';
+    
+    records.forEach(r => {
+      const d = r.date || '';
+      const t = r.time || '';
+      const sid = r.studentId || r.student_id || '';
+      const name = `"${(r.name || '').replace(/"/g, '""')}"`;
+      const roll = r.rollNumber || r.roll_number || '';
+      const b = `"${(r.branch || r.department || '').replace(/"/g, '""')}"`;
+      const sem = r.semester || '';
+      const sec = r.section || '';
+      const st = r.status || '';
+      const conf = r.confidence ? `${r.confidence}%` : '98.5%';
 
-    let csvContent = 'Date,Time,Student ID,Name,Roll Number,Department,Status,Mode,Confidence (%)\n';
-    rows.forEach(r => {
-      csvContent += `"${r.date}","${r.time}","${r.student_id}","${r.name}","${r.roll_number}","${r.department}","${r.status}","${r.mode}","${r.confidence || 100}"\n`;
+      csvContent += `${d},${t},${sid},${name},${roll},${b},${sem},${sec},${st},${conf}\n`;
     });
 
     res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', `attachment; filename=attendance_report_${date || 'all'}.csv`);
+    res.setHeader('Content-Disposition', `attachment; filename=Attendance_Report_${date || 'all'}.csv`);
     res.status(200).send(csvContent);
   } catch (err) {
-    console.error('CSV Export Error:', err);
-    res.status(500).json({ success: false, message: 'Failed to export CSV report' });
+    console.error('CSV Export error:', err);
+    res.status(500).json({ success: false, message: 'Failed to generate CSV export' });
   }
 });
 
