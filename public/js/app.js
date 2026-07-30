@@ -80,87 +80,19 @@ function initClock() {
 
 // Authentication & Session Management
 function initAuth() {
-  const loginScreen = document.getElementById('login-screen');
   const appContainer = document.getElementById('app');
 
-  // Check stored session token
-  if (appState.token && appState.user) {
-    loginScreen.classList.add('hidden');
-    appContainer.classList.remove('hidden');
-    document.getElementById('current-user-name').textContent = appState.user.name || 'System Admin';
-    loadDashboardStats();
-  } else {
-    loginScreen.classList.remove('hidden');
-    appContainer.classList.add('hidden');
+  // Always show main dashboard directly without login page
+  appContainer?.classList.remove('hidden');
+  const userNameElem = document.getElementById('current-user-name');
+  if (userNameElem) userNameElem.textContent = 'System Admin';
+  loadDashboardStats();
+
+  // Hide or disable logout button
+  const logoutBtn = document.getElementById('btn-logout');
+  if (logoutBtn) {
+    logoutBtn.style.display = 'none';
   }
-
-  // Auth Mode Switcher (Login vs Sign Up)
-  const tabLogin = document.getElementById('tab-btn-login');
-  const tabSignup = document.getElementById('tab-btn-signup');
-  const formLogin = document.getElementById('form-login');
-  const formSignup = document.getElementById('form-signup');
-
-  tabLogin?.addEventListener('click', () => {
-    tabLogin.classList.add('active');
-    tabSignup.classList.remove('active');
-    formLogin.classList.remove('hidden');
-    formSignup.classList.add('hidden');
-  });
-
-  tabSignup?.addEventListener('click', () => {
-    tabSignup.classList.add('active');
-    tabLogin.classList.remove('active');
-    formSignup.classList.remove('hidden');
-    formLogin.classList.add('hidden');
-  });
-
-  // Login Submit
-  formLogin?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const username = document.getElementById('login-username').value.trim();
-    const password = document.getElementById('login-password').value;
-
-    try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
-      });
-      const data = await res.json();
-
-      if (data.success) {
-        appState.token = data.token;
-        appState.user = data.user;
-        localStorage.setItem('visioface_token', data.token);
-        localStorage.setItem('visioface_user', JSON.stringify(data.user));
-
-        loginScreen.classList.add('hidden');
-        appContainer.classList.remove('hidden');
-        document.getElementById('current-user-name').textContent = data.user.name;
-
-        window.showToast(`Welcome back, ${data.user.name}!`, 'success');
-        loadDashboardStats();
-      } else {
-        const alertBox = document.getElementById('login-alert-box');
-        document.getElementById('login-alert-msg').textContent = data.message || 'Invalid credentials';
-        alertBox.classList.remove('hidden');
-      }
-    } catch (err) {
-      window.showToast('Server connection error during login.', 'danger');
-    }
-  });
-
-  // Logout Submit
-  document.getElementById('btn-logout')?.addEventListener('click', () => {
-    localStorage.removeItem('visioface_token');
-    localStorage.removeItem('visioface_user');
-    appState.token = null;
-    appState.user = null;
-
-    loginScreen.classList.remove('hidden');
-    appContainer.classList.add('hidden');
-    window.showToast('Logged out successfully.', 'info');
-  });
 }
 
 // Navigation Tab Switchers
