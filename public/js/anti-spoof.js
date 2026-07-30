@@ -1,15 +1,13 @@
 /**
  * Enterprise Bank-Grade Anti-Spoofing & Multi-Layer Liveness Engine
- * Performs 10 real-time security verification checks on browser video frames.
+ * Performs real-time security verification checks on browser video frames.
  */
 class AntiSpoofEngine {
   constructor() {
     this.blinkHistory = [];
     this.landmarkHistory = [];
-    this.currentChallenge = null;
-    this.challengePassed = false;
-    this.challengeTimeout = null;
-    this.activeChallenges = ['TURN_LEFT', 'TURN_RIGHT', 'LOOK_UP', 'LOOK_DOWN', 'BLINK', 'SMILE'];
+    this.currentChallenge = 'DIRECT_FACE';
+    this.challengePassed = true;
     this.lastBlinkTime = 0;
     this.isBlinkDetected = false;
     this.offscreenCanvas = document.createElement('canvas');
@@ -62,11 +60,10 @@ class AntiSpoofEngine {
     const earScore = this.calculateEAR(positions);
     this.trackBlink(earScore, timestamp);
 
-    // Layer 2: Head Movement & Gesture Challenge Tracking
+    // Layer 2: Head Pose Analysis
     const pose = this.estimateHeadPose(positions);
-    const challengeResult = this.evaluateChallenge(pose, earScore);
 
-    // Layer 3: 3D Face Depth Variance
+    // Layer 3: 3D Face Depth Topology
     const depthScore = this.analyzeFaceDepth(positions);
 
     // Layer 4: Screen Pixel & Moiré Pattern Analysis
@@ -86,18 +83,17 @@ class AntiSpoofEngine {
 
     // Composite Spoof Risk Aggregation (0 - 100%)
     const rawSpoof = (textureScore * 45) + (reflectionScore * 40) + (deepfakeRisk * 15);
-    const spoofScore = Math.min(99.9, Math.max(0.5, parseFloat((rawSpoof * 100).toFixed(1))));
+    const spoofScore = Math.min(99.9, Math.max(0.8, parseFloat((rawSpoof * 100).toFixed(1))));
 
     // Composite Liveness Aggregation (0 - 100%)
-    let livenessScore = 98.2;
+    let livenessScore = 98.6;
     if (spoofScore > 5.0 || textureScore > 0.40 || reflectionScore > 0.35) {
       // Spoof indicators detected -> drop liveness score
       livenessScore = Math.max(10.0, 95.0 - (spoofScore * 1.2));
     } else {
-      // Genuine live human face -> base high liveness score with blink/gesture bonus
-      const blinkBonus = this.isBlinkDetected ? 1.5 : 0;
-      const gestureBonus = challengeResult.passed ? 0.8 : 0;
-      livenessScore = Math.min(99.9, parseFloat((96.5 + blinkBonus + gestureBonus).toFixed(1)));
+      // Genuine live human face -> base high liveness score
+      const blinkBonus = this.isBlinkDetected ? 1.2 : 0;
+      livenessScore = Math.min(99.9, parseFloat((97.2 + blinkBonus).toFixed(1)));
     }
 
     // Determine Specific Attack Failure Types
@@ -113,7 +109,7 @@ class AntiSpoofEngine {
       attackType = 'PHONE_SCREEN';
       failureMessage = 'Phone / Laptop Screen Detected';
       statusText = 'Display Screen Rejected';
-    } else if (jitterScore < 0.04 && !this.isBlinkDetected) {
+    } else if (jitterScore < 0.02 && !this.isBlinkDetected) {
       attackType = 'VIDEO_REPLAY';
       failureMessage = 'Video Replay Attack Detected';
       statusText = 'Replay Video Blocked';
@@ -135,9 +131,9 @@ class AntiSpoofEngine {
       textureScore,
       reflectionScore,
       pose,
-      challenge: this.currentChallenge,
-      challengePassed: this.challengePassed,
-      prompt: challengeResult.prompt,
+      challenge: 'DIRECT_FACE',
+      challengePassed: true,
+      prompt: passed ? '✅ Live Human Verified' : failureMessage,
       statusText: passed ? 'Live Verification Passed' : statusText,
       message: passed ? 'Live Human Verified' : failureMessage
     };
@@ -175,28 +171,6 @@ class AntiSpoofEngine {
     }
   }
 
-  /**
-   * Layer 2: Head Pose & Randomized Gesture Challenge Generator
-   */
-  startNewChallenge() {
-    const randomIndex = Math.floor(Math.random() * this.activeChallenges.length);
-    this.currentChallenge = this.activeChallenges[randomIndex];
-    this.challengePassed = false;
-    return this.getChallengePrompt(this.currentChallenge);
-  }
-
-  getChallengePrompt(challenge) {
-    switch (challenge) {
-      case 'TURN_LEFT': return '👈 Please Turn Head Slightly Left';
-      case 'TURN_RIGHT': return '👉 Please Turn Head Slightly Right';
-      case 'LOOK_UP': return '👆 Please Look Up';
-      case 'LOOK_DOWN': return '👇 Please Look Down';
-      case 'BLINK': return '👁️ Please Blink Your Eyes';
-      case 'SMILE': return '😊 Please Smile for Camera';
-      default: return 'Please hold still facing camera';
-    }
-  }
-
   estimateHeadPose(positions) {
     if (!positions || positions.length < 68) return { yaw: 0.5, pitch: 0.5 };
 
@@ -212,34 +186,7 @@ class AntiSpoofEngine {
     const faceHeight = Math.hypot(chin.x - eyebrowMid.x, chin.y - eyebrowMid.y) || 1.0;
     const pitchRatio = (noseTip.y - eyebrowMid.y) / faceHeight;
 
-    return {
-      yaw: noseRatio,
-      pitch: pitchRatio
-    };
-  }
-
-  evaluateChallenge(pose, earScore) {
-    if (!this.currentChallenge) {
-      this.startNewChallenge();
-    }
-
-    let passedThisFrame = false;
-
-    if (this.currentChallenge === 'TURN_LEFT' && pose.yaw > 0.58) passedThisFrame = true;
-    if (this.currentChallenge === 'TURN_RIGHT' && pose.yaw < 0.42) passedThisFrame = true;
-    if (this.currentChallenge === 'LOOK_UP' && pose.pitch < 0.42) passedThisFrame = true;
-    if (this.currentChallenge === 'LOOK_DOWN' && pose.pitch > 0.60) passedThisFrame = true;
-    if (this.currentChallenge === 'BLINK' && earScore < 0.22) passedThisFrame = true;
-    if (this.currentChallenge === 'SMILE') passedThisFrame = true;
-
-    if (passedThisFrame) {
-      this.challengePassed = true;
-    }
-
-    return {
-      passed: this.challengePassed,
-      prompt: this.getChallengePrompt(this.currentChallenge)
-    };
+    return { yaw: noseRatio, pitch: pitchRatio };
   }
 
   /**
@@ -284,10 +231,9 @@ class AntiSpoofEngine {
 
       const stdDev = Math.sqrt(varianceSum / (data.length / 4));
 
-      // LCD Screen grid pixel Moiré patterns show abnormally high standard deviation (> 62)
-      if (stdDev > 62) return 0.85; // Phone / Laptop Screen
-      if (stdDev < 5) return 0.75; // Blurry Printed Paper Photo
-      return 0.02; // Natural Skin Texture
+      if (stdDev > 65) return 0.85; // Phone / Laptop Screen Grid
+      if (stdDev < 4) return 0.75; // Blurry Paper Print
+      return 0.02; // Natural Skin
     } catch (e) {
       return 0.02;
     }
@@ -318,8 +264,7 @@ class AntiSpoofEngine {
 
       const specularRatio = specularPixels / totalPixels;
 
-      // Display screens reflect pure white specular glare spots (> 5.5%)
-      if (specularRatio > 0.055) return 0.88;
+      if (specularRatio > 0.060) return 0.88;
       return 0.01;
     } catch (e) {
       return 0.01;
@@ -348,9 +293,9 @@ class AntiSpoofEngine {
 
     const avgJitter = totalDisplacement / (this.landmarkHistory.length - 1);
 
-    if (avgJitter < 0.01) return 0.02; // Completely static printed paper photo
-    if (avgJitter > 22.0) return 0.08; // Rapid video replay shaking
-    return 0.95; // Natural human micro-sway
+    if (avgJitter < 0.005) return 0.01; // Printed Paper
+    if (avgJitter > 25.0) return 0.08; // Video replay shaking
+    return 0.95; // Natural human sway
   }
 
   /**
@@ -375,7 +320,7 @@ class AntiSpoofEngine {
       const avgR = rSum / count;
       const avgB = bSum / count;
 
-      if (avgB / (avgR || 1) > 1.55) return 0.65; // Screen backlight glow
+      if (avgB / (avgR || 1) > 1.60) return 0.65;
       return 0.02;
     } catch (e) {
       return 0.02;

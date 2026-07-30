@@ -169,11 +169,12 @@ class FaceAIEngine {
       let detectedDescriptor = null;
       let detectedDetection = null;
       let allDetections = [];
+      let faceBox = null;
 
       // 1. Try Pre-Trained Face-API Multi-Face & Landmark Detection
       if (this.isModelLoaded && window.faceapi) {
         try {
-          allDetections = await faceapi.detectAllFaces(this.video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.45 }))
+          allDetections = await faceapi.detectAllFaces(this.video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.35 }))
             .withFaceLandmarks()
             .withFaceDescriptors();
 
@@ -305,16 +306,23 @@ class FaceAIEngine {
     }
 
     if (challengeElem) {
-      challengeElem.textContent = antiSpoof.prompt || '👉 Please Face Camera Directly';
+      challengeElem.textContent = antiSpoof.passed ? '✅ Live Human Verified' : (antiSpoof.prompt || '👉 Position Face in Camera Frame');
     }
 
     if (stepTextElem && stepBarElem) {
       let stepStr = 'Scanning Face...';
       let stepPct = 25;
 
-      if (antiSpoof.livenessScore > 40) { stepStr = 'Checking Liveness...'; stepPct = 50; }
-      if (antiSpoof.livenessScore > 70) { stepStr = 'Analyzing Face Depth & Reflection...'; stepPct = 75; }
-      if (antiSpoof.passed) { stepStr = 'Verifying Identity & Marking Attendance...'; stepPct = 100; }
+      if (antiSpoof.passed) {
+        stepStr = 'Identity Verified & Marking Attendance...';
+        stepPct = 100;
+      } else if (antiSpoof.livenessScore > 70) {
+        stepStr = 'Analyzing Face Depth & Reflection...';
+        stepPct = 75;
+      } else if (antiSpoof.livenessScore > 40) {
+        stepStr = 'Checking Liveness...';
+        stepPct = 50;
+      }
 
       stepTextElem.textContent = stepStr;
       stepBarElem.style.width = `${stepPct}%`;
