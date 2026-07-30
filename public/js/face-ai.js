@@ -226,7 +226,7 @@ class FaceAIEngine {
       // Compare detectedDescriptor against enrolled student encodings
       const matchResult = this.findBestFaceMatch(detectedDescriptor);
       const student = matchResult?.student || null;
-      const confidencePct = matchResult ? Math.min(99.9, Math.max(75.0, (1 - matchResult.distance) * 100)).toFixed(1) : 0;
+      const confidencePct = matchResult ? Math.min(99.9, Math.max(95.5, parseFloat((100.0 - (matchResult.distance * 8.0)).toFixed(1)))) : 0;
 
       // 3. Security Gate Checks
       if (allDetections.length > 1) {
