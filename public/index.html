@@ -224,10 +224,6 @@
             <span>Live Camera Scanner</span>
             <span class="pulse-indicator"></span>
           </button>
-          <button class="nav-link" data-tab="enrollment">
-            <i class="fa-solid fa-user-plus"></i>
-            <span>Face Enrollment Studio</span>
-          </button>
           <button class="nav-link" data-tab="students">
             <i class="fa-solid fa-users"></i>
             <span>Student Management</span>
@@ -475,86 +471,7 @@
         </section>
 
 
-        <!-- 3. FACE ENROLLMENT STUDIO VIEW -->
-        <section id="view-enrollment" class="tab-view">
-          <div class="view-header">
-            <div>
-              <h2 class="view-title">Face Enrollment Studio</h2>
-              <p class="view-subtitle">Capture multi-angle face descriptor samples (20–50 frames) for high-accuracy AI recognition.</p>
-            </div>
-          </div>
-
-          <div class="enrollment-grid">
-            <div class="glass-card form-card">
-              <div class="card-header">
-                <h5>1. Select Student for Face Registration</h5>
-              </div>
-              <div class="card-body">
-                <div class="form-group mb-3">
-                  <label class="form-label">Select Registered Student</label>
-                  <select class="form-control" id="enroll-student-select">
-                    <option value="">-- Choose Student --</option>
-                  </select>
-                </div>
-
-                <div class="student-preview-card hidden" id="enroll-student-card">
-                  <div class="preview-avatar">
-                    <i class="fa-solid fa-user-graduate"></i>
-                  </div>
-                  <div class="preview-info">
-                    <h5 id="enroll-preview-name">Name</h5>
-                    <p id="enroll-preview-id">ID: STU-XXXX</p>
-                    <span class="badge bg-warning" id="enroll-status-pill">Pending Face Capture</span>
-                  </div>
-                </div>
-
-                <div class="instructions-box mt-4">
-                  <h6><i class="fa-solid fa-lightbulb me-2 text-warning"></i> Guidelines for Best Results:</h6>
-                  <ul>
-                    <li>Ensure clear face lighting without harsh backlights.</li>
-                    <li>Slowly tilt and rotate head slightly (left, right, smile).</li>
-                    <li>Avoid wearing dark sunglasses or heavy hats.</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-
-            <!-- Enrollment Camera Capture Studio -->
-            <div class="glass-card camera-studio-card">
-              <div class="card-header flex-between">
-                <h5>2. Live Frame Capture Wizard</h5>
-                <span class="badge bg-primary" id="enroll-progress-badge">0 / 30 Frames</span>
-              </div>
-              <div class="card-body text-center">
-                <div class="enroll-video-wrapper">
-                  <video id="enroll-video" autoplay playsinline muted></video>
-                  <canvas id="enroll-canvas"></canvas>
-                  <div class="enroll-target-ellipse"></div>
-                </div>
-
-                <!-- Capture Progress Bar -->
-                <div class="enroll-progress-wrapper mt-3">
-                  <div class="progress-bar-container large">
-                    <div class="progress-fill" id="enroll-progress-fill" style="width: 0%;"></div>
-                  </div>
-                  <span class="progress-sub-text" id="enroll-progress-text">Click 'Start Face Enrollment' to begin capture</span>
-                </div>
-
-                <div class="mt-4">
-                  <button class="btn btn-success btn-lg" id="btn-start-enroll">
-                    <i class="fa-solid fa-circle-dot me-2"></i> Start Face Enrollment
-                  </button>
-                  <button class="btn btn-primary btn-lg hidden" id="btn-save-enroll">
-                    <i class="fa-solid fa-floppy-disk me-2"></i> Save & Finish Registration
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-
-        <!-- 4. STUDENT MANAGEMENT VIEW -->
+        <!-- 3. STUDENT MANAGEMENT VIEW -->
         <section id="view-students" class="tab-view">
           <div class="view-header">
             <div>
@@ -939,7 +856,6 @@
   <!-- App JavaScript Modules -->
   <script src="js/app.js"></script>
   <script src="js/face-ai.js"></script>
-  <script src="js/enrollment.js"></script>
   <script src="js/reports.js"></script>
 </body>
 </html>

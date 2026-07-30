@@ -263,8 +263,6 @@ function switchTab(tabId) {
     loadAttendanceLogs();
   } else if (tabId === 'reports') {
     if (window.renderReports) window.renderReports();
-  } else if (tabId === 'enrollment') {
-    populateEnrollmentStudentSelect();
   }
 }
 
@@ -309,7 +307,6 @@ async function loadStudents() {
   if (res.success) {
     state.students = res.students;
     renderStudentsTable(state.students);
-    populateEnrollmentStudentSelect();
   }
 }
 
@@ -624,13 +621,6 @@ function initModals() {
   });
 }
 
-function populateEnrollmentStudentSelect() {
-  const select = document.getElementById('enroll-student-select');
-  if (!select) return;
-  select.innerHTML = `<option value="">-- Select Student for Enrollment --</option>` +
-    state.students.map(s => `<option value="${s.student_id}">${s.name} (${s.student_id} - ${s.department}) ${s.face_enrolled ? '✓ Enrolled' : ''}</option>`).join('');
-}
-
 function populateManualStudentSelect() {
   const select = document.getElementById('manual-student-select');
   if (!select) return;
@@ -642,12 +632,8 @@ function populateManualStudentSelect() {
 }
 
 function openEnrollForStudent(studentId) {
-  switchTab('enrollment');
-  const select = document.getElementById('enroll-student-select');
-  if (select) {
-    select.value = studentId;
-    select.dispatchEvent(new Event('change'));
-  }
+  switchTab('live-scanner');
+  showToast(`Position face in camera scanner for student ${studentId}`, 'info');
 }
 
 // Toast Notification Toast Generator
