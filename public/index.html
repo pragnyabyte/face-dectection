@@ -1,0 +1,945 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>VisioFace AI - Face Detection & Attendance System</title>
+  <!-- Google Fonts & FontAwesome -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  
+  <!-- External JS Libraries (Chart.js, SheetJS, html2pdf) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
+  <!-- Custom Styles -->
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <!-- DEDICATED LOGIN & SIGN UP SCREEN -->
+  <div id="login-screen" class="login-wrapper">
+    <div class="login-container glass-card">
+      <div class="login-header text-center">
+        <div class="brand-logo justify-content-center mb-2">
+          <i class="fa-solid fa-eye-slash ai-glow-icon me-2"></i>
+          <span class="brand-title fs-2">Visio<span class="text-accent">Face</span> AI</span>
+        </div>
+        <p class="text-muted fs-6">Face Detection & Automatic Attendance Portal</p>
+      </div>
+
+      <!-- Auth Mode Switcher (Log In vs Sign Up) -->
+      <div class="auth-mode-tabs mb-3">
+        <button class="auth-tab-btn active" id="tab-btn-login">
+          <i class="fa-solid fa-right-to-bracket me-1"></i> Log In
+        </button>
+        <button class="auth-tab-btn" id="tab-btn-signup">
+          <i class="fa-solid fa-user-plus me-1"></i> Sign Up
+        </button>
+      </div>
+
+      <!-- Role Selection Tabs -->
+      <div class="role-selector-pills mb-3">
+        <button class="role-pill active" data-role="admin">
+          <i class="fa-solid fa-user-shield me-1"></i> Admin
+        </button>
+        <button class="role-pill" data-role="teacher">
+          <i class="fa-solid fa-chalkboard-user me-1"></i> Teacher
+        </button>
+        <button class="role-pill" data-role="student">
+          <i class="fa-solid fa-user-graduate me-1"></i> Student
+        </button>
+      </div>
+
+      <!-- Error / Info Alert Box -->
+      <div id="login-alert-box" class="alert-box-inline hidden">
+        <i class="fa-solid fa-triangle-exclamation alert-icon-inline"></i>
+        <span id="login-alert-msg">Validation error message</span>
+      </div>
+
+      <!-- 1. LOGIN FORM -->
+      <form id="form-login" onsubmit="event.preventDefault();">
+        <div class="form-group mb-3">
+          <label class="form-label" id="login-user-label">Username / Account ID</label>
+          <div class="input-group">
+            <span class="input-group-text"><i class="fa-solid fa-user"></i></span>
+            <input type="text" id="login-username" class="form-control" placeholder="Enter username..." required />
+          </div>
+        </div>
+
+        <div class="form-group mb-4">
+          <label class="form-label">Password</label>
+          <div class="input-group">
+            <span class="input-group-text"><i class="fa-solid fa-key"></i></span>
+            <input type="password" id="login-password" class="form-control" placeholder="Enter password..." required />
+            <button type="button" class="btn-toggle-password" id="btn-toggle-password">
+              <i class="fa-solid fa-eye"></i>
+            </button>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary w-100 btn-lg mb-3" id="btn-login-submit">
+          <i class="fa-solid fa-right-to-bracket me-2"></i> Log In to Portal
+        </button>
+      </form>
+
+      <!-- 2. SIGN UP FORM (Initially Hidden) -->
+      <form id="form-signup" class="hidden" onsubmit="event.preventDefault();">
+        <div class="form-group mb-2">
+          <label class="form-label">Full Name *</label>
+          <div class="input-group">
+            <span class="input-group-text"><i class="fa-solid fa-id-card"></i></span>
+            <input type="text" id="signup-name" class="form-control" placeholder="e.g. John Doe" required />
+          </div>
+        </div>
+
+        <div class="form-group mb-2">
+          <label class="form-label">Username *</label>
+          <div class="input-group">
+            <span class="input-group-text"><i class="fa-solid fa-at"></i></span>
+            <input type="text" id="signup-username" class="form-control" placeholder="e.g. johndoe2026" required />
+          </div>
+        </div>
+
+        <div class="form-group mb-2">
+          <label class="form-label">Email Address</label>
+          <div class="input-group">
+            <span class="input-group-text"><i class="fa-solid fa-envelope"></i></span>
+            <input type="email" id="signup-email" class="form-control" placeholder="john@institution.edu" />
+          </div>
+        </div>
+
+        <div class="form-group mb-3">
+          <label class="form-label">Create Password *</label>
+          <div class="input-group">
+            <span class="input-group-text"><i class="fa-solid fa-lock"></i></span>
+            <input type="password" id="signup-password" class="form-control" placeholder="Create strong password..." required />
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-success w-100 btn-lg mb-3" id="btn-signup-submit">
+          <i class="fa-solid fa-user-check me-2"></i> Create Account & Sign Up
+        </button>
+      </form>
+
+      <!-- Toggle Mode Prompt -->
+      <div class="text-center mt-2">
+        <span class="text-muted small" id="auth-switch-prompt">Don't have an account? </span>
+        <button type="button" class="btn-link-action" id="btn-switch-mode">Sign Up Now</button>
+      </div>
+
+      <!-- Quick Demo Login Shortcuts -->
+      <div class="quick-demo-box mt-3 text-center">
+        <p class="quick-demo-title">⚡ Quick Demo One-Click Fill:</p>
+        <div class="d-flex justify-content-center gap-2 flex-wrap">
+          <button class="btn btn-sm btn-secondary" onclick="quickFillLogin('admin', 'admin123', 'admin')">
+            <i class="fa-solid fa-user-shield me-1"></i> Admin
+          </button>
+          <button class="btn btn-sm btn-secondary" onclick="quickFillLogin('teacher', 'teacher123', 'teacher')">
+            <i class="fa-solid fa-chalkboard-user me-1"></i> Teacher
+          </button>
+          <button class="btn btn-sm btn-secondary" onclick="quickFillLogin('student', 'student123', 'student')">
+            <i class="fa-solid fa-user-graduate me-1"></i> Student
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="app" class="app-layout hidden">
+    
+    <!-- Top Header -->
+    <header class="top-header">
+      <div class="header-left">
+        <div class="brand-logo">
+          <i class="fa-solid me-2 fa-eye-slash ai-glow-icon"></i>
+          <span class="brand-title">Visio<span class="text-accent">Face</span> AI</span>
+          <span class="badge-version">v2.5 Pro</span>
+        </div>
+      </div>
+
+      <div class="header-center">
+        <div class="live-clock-card">
+          <i class="fa-regular fa-clock me-2 text-accent"></i>
+          <span id="live-time">00:00:00 AM</span>
+          <span class="clock-divider">|</span>
+          <span id="live-date">Thu, Jul 30, 2026</span>
+        </div>
+      </div>
+
+      <div class="header-right">
+        <div class="gps-badge" id="gps-status">
+          <i class="fa-solid fa-location-dot text-success me-1"></i>
+          <span>GPS Active</span>
+        </div>
+
+        <button class="icon-btn" id="btn-theme-toggle" title="Toggle Theme">
+          <i class="fa-solid fa-moon"></i>
+        </button>
+
+        <div class="notification-dropdown-wrapper">
+          <button class="icon-btn" id="btn-notifications" title="Notifications">
+            <i class="fa-solid fa-bell"></i>
+            <span class="badge-dot" id="notif-dot"></span>
+          </button>
+          <div class="notif-menu" id="notif-menu">
+            <div class="notif-header">
+              <h6>System Activity Logs</h6>
+            </div>
+            <div class="notif-body" id="notif-list">
+              <div class="notif-item">System loaded and ready.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="user-profile-badge">
+          <div class="avatar-circle">
+            <i class="fa-solid fa-user-shield"></i>
+          </div>
+          <div class="user-info">
+            <span class="user-name" id="current-user-name">Admin User</span>
+            <span class="user-role" id="current-user-role">Administrator</span>
+          </div>
+          <button class="btn-logout" id="btn-logout" title="Sign Out">
+            <i class="fa-solid fa-right-from-bracket"></i>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Workspace Area -->
+    <div class="workspace-wrapper">
+      
+      <!-- Left Sidebar Navigation -->
+      <aside class="sidebar">
+        <nav class="nav-menu">
+          <button class="nav-link active" data-tab="dashboard">
+            <i class="fa-solid fa-chart-pie"></i>
+            <span>Dashboard</span>
+          </button>
+          <button class="nav-link" data-tab="live-scanner">
+            <i class="fa-solid fa-camera"></i>
+            <span>Live Camera Scanner</span>
+            <span class="pulse-indicator"></span>
+          </button>
+          <button class="nav-link" data-tab="enrollment">
+            <i class="fa-solid fa-user-plus"></i>
+            <span>Face Enrollment Studio</span>
+          </button>
+          <button class="nav-link" data-tab="students">
+            <i class="fa-solid fa-users"></i>
+            <span>Student Management</span>
+          </button>
+          <button class="nav-link" data-tab="attendance-logs">
+            <i class="fa-solid fa-clipboard-user"></i>
+            <span>Attendance Logs</span>
+          </button>
+          <button class="nav-link" data-tab="reports">
+            <i class="fa-solid fa-file-chart-column"></i>
+            <span>Reports & Analytics</span>
+          </button>
+          <button class="nav-link" data-tab="settings">
+            <i class="fa-solid fa-sliders"></i>
+            <span>System Settings</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="system-status-card">
+            <div class="status-indicator online"></div>
+            <div class="status-text">
+              <span class="status-title">AI Engine Ready</span>
+              <span class="status-sub">Client WebGL + Python</span>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Content Area -->
+      <main class="content-area">
+
+        <!-- 1. DASHBOARD VIEW -->
+        <section id="view-dashboard" class="tab-view active">
+          <div class="view-header">
+            <div>
+              <h2 class="view-title">Overview Dashboard</h2>
+              <p class="view-subtitle">Real-time attendance metrics, department insights, and live activity feed.</p>
+            </div>
+            <div class="quick-actions">
+              <button class="btn btn-primary" onclick="switchTab('live-scanner')">
+                <i class="fa-solid fa-camera me-2"></i> Start Camera Scanner
+              </button>
+            </div>
+          </div>
+
+          <!-- KPI Cards Grid -->
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <div class="kpi-icon bg-blue">
+                <i class="fa-solid fa-user-graduate"></i>
+              </div>
+              <div class="kpi-content">
+                <span class="kpi-label">Total Registered</span>
+                <h3 class="kpi-value" id="kpi-total-students">0</h3>
+                <span class="kpi-sub"><i class="fa-solid fa-building me-1"></i> Across All Depts</span>
+              </div>
+            </div>
+
+            <div class="kpi-card">
+              <div class="kpi-icon bg-green">
+                <i class="fa-solid fa-user-check"></i>
+              </div>
+              <div class="kpi-content">
+                <span class="kpi-label">Present Today</span>
+                <h3 class="kpi-value" id="kpi-present-today">0</h3>
+                <span class="kpi-sub text-success"><i class="fa-solid fa-arrow-trend-up me-1"></i> Marked Automatically</span>
+              </div>
+            </div>
+
+            <div class="kpi-card">
+              <div class="kpi-icon bg-red">
+                <i class="fa-solid fa-user-xmark"></i>
+              </div>
+              <div class="kpi-content">
+                <span class="kpi-label">Absent Today</span>
+                <h3 class="kpi-value" id="kpi-absent-today">0</h3>
+                <span class="kpi-sub text-danger" id="kpi-late-sub">0 Late Arrivals</span>
+              </div>
+            </div>
+
+            <div class="kpi-card">
+              <div class="kpi-icon bg-purple">
+                <i class="fa-solid fa-percent"></i>
+              </div>
+              <div class="kpi-content">
+                <span class="kpi-label">Attendance Rate</span>
+                <h3 class="kpi-value" id="kpi-rate">0%</h3>
+                <div class="progress-bar-container">
+                  <div class="progress-fill" id="kpi-rate-fill" style="width: 0%;"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Charts & Live Feed Layout -->
+          <div class="dashboard-grid mt-4">
+            <!-- Attendance Rate Chart -->
+            <div class="glass-card chart-card">
+              <div class="card-header">
+                <h5><i class="fa-solid fa-chart-line me-2 text-accent"></i> 7-Day Attendance Trend</h5>
+              </div>
+              <div class="card-body">
+                <canvas id="chart-attendance-trend" height="230"></canvas>
+              </div>
+            </div>
+
+            <!-- Real-time Attendance Activity Feed -->
+            <div class="glass-card feed-card">
+              <div class="card-header flex-between">
+                <h5><i class="fa-solid fa-bolt me-2 text-warning"></i> Real-time Attendance Feed</h5>
+                <span class="badge-live"><i class="fa-solid fa-circle text-danger me-1"></i> LIVE</span>
+              </div>
+              <div class="card-body p-0">
+                <div class="feed-list" id="dashboard-feed-list">
+                  <div class="feed-empty">No attendance scans recorded today yet.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- 2. LIVE CAMERA SCANNER VIEW -->
+        <section id="view-live-scanner" class="tab-view">
+          <div class="view-header">
+            <div>
+              <h2 class="view-title">Real-Time Face Recognition Scanner</h2>
+              <p class="view-subtitle">Align face in camera view. System recognizes identity and auto-marks attendance.</p>
+            </div>
+            <div class="scanner-toggles">
+              <div class="scan-mode-pill-box me-3">
+                <button class="mode-pill active" id="btn-mode-checkin" data-mode="Check-In">
+                  <i class="fa-solid fa-right-to-bracket me-1"></i> Check-In (Entry)
+                </button>
+                <button class="mode-pill" id="btn-mode-checkout" data-mode="Check-Out">
+                  <i class="fa-solid fa-right-from-bracket me-1"></i> Check-Out (Leaving)
+                </button>
+              </div>
+
+              <label class="toggle-switch me-3">
+                <input type="checkbox" id="toggle-liveness" checked>
+                <span class="slider"></span>
+                <span class="toggle-label"><i class="fa-solid fa-eye me-1"></i> Liveness Check</span>
+              </label>
+
+              <label class="toggle-switch me-3">
+                <input type="checkbox" id="toggle-sound" checked>
+                <span class="slider"></span>
+                <span class="toggle-label"><i class="fa-solid fa-volume-high me-1"></i> Audio Feedback</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="scanner-layout">
+            <!-- Camera Feed Box -->
+            <div class="camera-viewport-card glass-card">
+              <div class="viewport-header">
+                <div class="status-pill green" id="camera-status-pill">
+                  <i class="fa-solid fa-circle me-1"></i> Camera Active
+                </div>
+                <div class="fps-pill" id="fps-display">FPS: 30</div>
+              </div>
+
+              <div class="camera-container">
+                <video id="webcam-video" autoplay playsinline muted></video>
+                <canvas id="camera-overlay-canvas"></canvas>
+                
+                <!-- Live Instruction Banner -->
+                <div class="camera-instruction-banner" id="camera-instruction-banner">
+                  <i class="fa-solid fa-face-smile me-2 text-warning"></i> Align your face inside target guide box and hold steady...
+                </div>
+
+                <!-- Camera Overlay Target Guide -->
+                <div class="face-target-guide" id="target-guide">
+                  <div class="corner top-left"></div>
+                  <div class="corner top-right"></div>
+                  <div class="corner bottom-left"></div>
+                  <div class="corner bottom-right"></div>
+                  <div class="scanning-line"></div>
+                </div>
+
+                <div class="camera-alert-overlay" id="camera-alert-overlay">
+                  <div class="alert-box-content">
+                    <i class="fa-solid fa-circle-check text-success alert-icon"></i>
+                    <h3 id="alert-student-name">Alex Morgan</h3>
+                    <p id="alert-student-info">STU-1001 | Computer Science</p>
+                    <span class="badge bg-success" id="alert-status-badge">ATTENDANCE MARKED PRESENT</span>
+                    <p class="text-success small mt-2 mb-0"><i class="fa-solid fa-camera-check me-1"></i> Scan Stopped. Face Photo Captured Successfully!</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="viewport-controls">
+                <button class="btn btn-primary" id="btn-start-camera">
+                  <i class="fa-solid fa-play me-2"></i> Start Camera
+                </button>
+                <button class="btn btn-success" id="btn-capture-register">
+                  <i class="fa-solid fa-camera-retro me-2"></i> Capture & Register New Face
+                </button>
+                <button class="btn btn-secondary" id="btn-stop-camera">
+                  <i class="fa-solid fa-stop me-2"></i> Stop Camera
+                </button>
+                <button class="btn btn-outline" id="btn-qr-fallback">
+                  <i class="fa-solid fa-qrcode me-2"></i> QR Backup Scan
+                </button>
+              </div>
+            </div>
+
+            <!-- Recognition Live Details Sidebar -->
+            <div class="scanner-sidebar glass-card">
+              <div class="card-header">
+                <h5><i class="fa-solid fa-id-card me-2 text-accent"></i> Live Scan Detection</h5>
+              </div>
+              <div class="card-body">
+                <div class="detection-result-card" id="scan-result-card">
+                  <div class="scan-placeholder">
+                    <i class="fa-solid fa-face-viewfinder placeholder-icon"></i>
+                    <p>Stand in front of the camera to verify identity.</p>
+                  </div>
+                </div>
+
+                <div class="scan-metrics-box mt-4">
+                  <h6>Scan Parameters</h6>
+                  <div class="metric-row">
+                    <span>Face Match Score:</span>
+                    <span id="metric-confidence" class="fw-bold">--</span>
+                  </div>
+                  <div class="metric-row">
+                    <span>Liveness Verification:</span>
+                    <span id="metric-liveness" class="badge bg-success">Passed</span>
+                  </div>
+                  <div class="metric-row">
+                    <span>GPS Coordinates:</span>
+                    <span id="metric-gps" class="text-muted">Fetching...</span>
+                  </div>
+                  <div class="metric-row">
+                    <span>Duplicate Cooldown:</span>
+                    <span id="metric-cooldown" class="badge bg-info">5 Min Window</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- 3. FACE ENROLLMENT STUDIO VIEW -->
+        <section id="view-enrollment" class="tab-view">
+          <div class="view-header">
+            <div>
+              <h2 class="view-title">Face Enrollment Studio</h2>
+              <p class="view-subtitle">Capture multi-angle face descriptor samples (20–50 frames) for high-accuracy AI recognition.</p>
+            </div>
+          </div>
+
+          <div class="enrollment-grid">
+            <div class="glass-card form-card">
+              <div class="card-header">
+                <h5>1. Select Student for Face Registration</h5>
+              </div>
+              <div class="card-body">
+                <div class="form-group mb-3">
+                  <label class="form-label">Select Registered Student</label>
+                  <select class="form-control" id="enroll-student-select">
+                    <option value="">-- Choose Student --</option>
+                  </select>
+                </div>
+
+                <div class="student-preview-card hidden" id="enroll-student-card">
+                  <div class="preview-avatar">
+                    <i class="fa-solid fa-user-graduate"></i>
+                  </div>
+                  <div class="preview-info">
+                    <h5 id="enroll-preview-name">Name</h5>
+                    <p id="enroll-preview-id">ID: STU-XXXX</p>
+                    <span class="badge bg-warning" id="enroll-status-pill">Pending Face Capture</span>
+                  </div>
+                </div>
+
+                <div class="instructions-box mt-4">
+                  <h6><i class="fa-solid fa-lightbulb me-2 text-warning"></i> Guidelines for Best Results:</h6>
+                  <ul>
+                    <li>Ensure clear face lighting without harsh backlights.</li>
+                    <li>Slowly tilt and rotate head slightly (left, right, smile).</li>
+                    <li>Avoid wearing dark sunglasses or heavy hats.</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+
+            <!-- Enrollment Camera Capture Studio -->
+            <div class="glass-card camera-studio-card">
+              <div class="card-header flex-between">
+                <h5>2. Live Frame Capture Wizard</h5>
+                <span class="badge bg-primary" id="enroll-progress-badge">0 / 30 Frames</span>
+              </div>
+              <div class="card-body text-center">
+                <div class="enroll-video-wrapper">
+                  <video id="enroll-video" autoplay playsinline muted></video>
+                  <canvas id="enroll-canvas"></canvas>
+                  <div class="enroll-target-ellipse"></div>
+                </div>
+
+                <!-- Capture Progress Bar -->
+                <div class="enroll-progress-wrapper mt-3">
+                  <div class="progress-bar-container large">
+                    <div class="progress-fill" id="enroll-progress-fill" style="width: 0%;"></div>
+                  </div>
+                  <span class="progress-sub-text" id="enroll-progress-text">Click 'Start Face Enrollment' to begin capture</span>
+                </div>
+
+                <div class="mt-4">
+                  <button class="btn btn-success btn-lg" id="btn-start-enroll">
+                    <i class="fa-solid fa-circle-dot me-2"></i> Start Face Enrollment
+                  </button>
+                  <button class="btn btn-primary btn-lg hidden" id="btn-save-enroll">
+                    <i class="fa-solid fa-floppy-disk me-2"></i> Save & Finish Registration
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- 4. STUDENT MANAGEMENT VIEW -->
+        <section id="view-students" class="tab-view">
+          <div class="view-header">
+            <div>
+              <h2 class="view-title">Student & Employee Directory</h2>
+              <p class="view-subtitle">Manage student profiles, department assignments, and face registration status.</p>
+            </div>
+            <div>
+              <button class="btn btn-primary" id="btn-open-add-student-modal">
+                <i class="fa-solid fa-user-plus me-2"></i> Add New Student
+              </button>
+            </div>
+          </div>
+
+          <div class="glass-card p-3 mb-4">
+            <div class="filter-bar">
+              <div class="search-box">
+                <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                <input type="text" id="student-search-input" class="form-control" placeholder="Search by Student ID, Name, or Roll Number..." />
+              </div>
+              <div class="filter-select">
+                <select id="student-dept-filter" class="form-control">
+                  <option value="All">All Departments</option>
+                  <option value="Computer Science">Computer Science</option>
+                  <option value="Electrical Engineering">Electrical Engineering</option>
+                  <option value="Mechanical Engineering">Mechanical Engineering</option>
+                  <option value="Information Technology">Information Technology</option>
+                  <option value="Business Admin">Business Admin</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="glass-card table-card">
+            <div class="table-responsive">
+              <table class="custom-table" id="students-table">
+                <thead>
+                  <tr>
+                    <th>Student ID</th>
+                    <th>Name</th>
+                    <th>Roll Number</th>
+                    <th>Department</th>
+                    <th>Contact</th>
+                    <th>Face Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="students-table-body">
+                  <!-- Populated via JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- 5. ATTENDANCE LOGS VIEW -->
+        <section id="view-attendance-logs" class="tab-view">
+          <div class="view-header">
+            <div>
+              <h2 class="view-title">Attendance Records & History</h2>
+              <p class="view-subtitle">View, search, and verify recorded attendance logs across all dates and departments.</p>
+            </div>
+            <div>
+              <button class="btn btn-outline" id="btn-open-manual-modal">
+                <i class="fa-solid fa-pen-to-square me-2"></i> Manual Attendance Entry
+              </button>
+            </div>
+          </div>
+
+          <div class="glass-card p-3 mb-4">
+            <div class="filter-grid">
+              <div>
+                <label class="form-label">Select Date</label>
+                <input type="date" id="log-date-filter" class="form-control" />
+              </div>
+              <div>
+                <label class="form-label">Department</label>
+                <select id="log-dept-filter" class="form-control">
+                  <option value="All">All Departments</option>
+                  <option value="Computer Science">Computer Science</option>
+                  <option value="Electrical Engineering">Electrical Engineering</option>
+                  <option value="Mechanical Engineering">Mechanical Engineering</option>
+                  <option value="Information Technology">Information Technology</option>
+                  <option value="Business Admin">Business Admin</option>
+                </select>
+              </div>
+              <div>
+                <label class="form-label">Status</label>
+                <select id="log-status-filter" class="form-control">
+                  <option value="All">All Statuses</option>
+                  <option value="Present">Present</option>
+                  <option value="Late">Late</option>
+                  <option value="Check-Out">Check-Out (Leaving)</option>
+                  <option value="Absent">Absent</option>
+                </select>
+              </div>
+              <div class="align-self-end d-flex gap-2">
+                <button class="btn btn-primary flex-1" id="btn-apply-log-filters">
+                  <i class="fa-solid fa-filter me-1"></i> Apply Filters
+                </button>
+                <button class="btn btn-secondary" id="btn-reset-log-filters" title="Reset Filters">
+                  <i class="fa-solid fa-rotate-left"></i>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div class="glass-card table-card">
+            <div class="table-responsive">
+              <table class="custom-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Time</th>
+                    <th>Student ID</th>
+                    <th>Name</th>
+                    <th>Department</th>
+                    <th>Status</th>
+                    <th>Verification Mode</th>
+                    <th>Match Confidence</th>
+                  </tr>
+                </thead>
+                <tbody id="logs-table-body">
+                  <!-- Populated via JS -->
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- 6. REPORTS & ANALYTICS VIEW -->
+        <section id="view-reports" class="tab-view">
+          <div class="view-header">
+            <div>
+              <h2 class="view-title">Reports & Analytics Studio</h2>
+              <p class="view-subtitle">Generate comprehensive attendance summaries and export reports in PDF, Excel, or CSV formats.</p>
+            </div>
+            <div class="export-buttons">
+              <button class="btn btn-danger" id="btn-export-pdf">
+                <i class="fa-solid fa-file-pdf me-2"></i> Export PDF Report
+              </button>
+              <button class="btn btn-success" id="btn-export-excel">
+                <i class="fa-solid fa-file-excel me-2"></i> Export Excel
+              </button>
+              <button class="btn btn-secondary" id="btn-export-csv">
+                <i class="fa-solid fa-file-csv me-2"></i> Export CSV
+              </button>
+            </div>
+          </div>
+
+          <div id="report-printable-area">
+            <!-- Department Performance Grid -->
+            <div class="glass-card p-4 mb-4">
+              <h4>Department Attendance Breakdown</h4>
+              <div class="dept-progress-list mt-3" id="report-dept-list">
+                <!-- Populated via JS -->
+              </div>
+            </div>
+
+            <!-- Report Charts Grid -->
+            <div class="dashboard-grid">
+              <div class="glass-card chart-card">
+                <div class="card-header">
+                  <h5>Department Performance Comparison</h5>
+                </div>
+                <div class="card-body">
+                  <canvas id="chart-dept-breakdown" height="220"></canvas>
+                </div>
+              </div>
+
+              <div class="glass-card chart-card">
+                <div class="card-header">
+                  <h5>Punctuality & Arrival Distribution</h5>
+                </div>
+                <div class="card-body">
+                  <canvas id="chart-punctuality-pie" height="220"></canvas>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+
+        <!-- 7. SYSTEM SETTINGS VIEW -->
+        <section id="view-settings" class="tab-view">
+          <div class="view-header">
+            <div>
+              <h2 class="view-title">System Configuration & Settings</h2>
+              <p class="view-subtitle">Configure AI face recognition parameters, camera sources, and notification settings.</p>
+            </div>
+          </div>
+
+          <div class="glass-card p-4">
+            <h5 class="mb-4 text-accent"><i class="fa-solid fa-sliders me-2"></i> AI Recognition Sensitivity & Thresholds</h5>
+            <div class="form-group mb-4">
+              <label class="form-label">Face Recognition Confidence Threshold (<span id="setting-threshold-val">85</span>%)</label>
+              <input type="range" class="form-range" id="setting-confidence-slider" min="60" max="98" value="85" />
+            </div>
+
+            <div class="form-group mb-4">
+              <label class="form-label">Duplicate Attendance Cooldown (Minutes)</label>
+              <select class="form-control" id="setting-cooldown-select">
+                <option value="1">1 Minute</option>
+                <option value="5" selected>5 Minutes</option>
+                <option value="15">15 Minutes</option>
+                <option value="60">1 Hour</option>
+              </select>
+            </div>
+
+            <h5 class="mb-4 text-accent mt-5"><i class="fa-solid fa-shield-halved me-2"></i> Anti-Spoofing & Liveness Features</h5>
+            <div class="form-check form-switch mb-3">
+              <input class="form-check-input" type="checkbox" id="setting-blink-liveness" checked>
+              <label class="form-check-label" for="setting-blink-liveness">Strict Blink Liveness Detection (Prevents photo spoofing)</label>
+            </div>
+
+            <div class="form-check form-switch mb-3">
+              <input class="form-check-input" type="checkbox" id="setting-parent-alerts" checked>
+              <label class="form-check-label" for="setting-parent-alerts">Automatic SMS/Email Parent Notifications on Absence</label>
+            </div>
+
+            <div class="mt-4">
+              <button class="btn btn-primary" id="btn-save-settings">
+                <i class="fa-solid fa-check me-2"></i> Save Configuration
+              </button>
+            </div>
+          </div>
+        </section>
+
+      </main>
+    </div>
+
+    <!-- MODAL: ADD / EDIT STUDENT -->
+    <div class="modal-backdrop" id="modal-add-student">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h5 id="modal-student-title">Add New Student</h5>
+          <button class="btn-close-modal" data-close="modal-add-student">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="form-student">
+            <div class="form-group mb-3">
+              <label class="form-label">Student ID *</label>
+              <input type="text" id="modal-student-id" class="form-control" placeholder="e.g. STU-1007" required />
+            </div>
+            <div class="form-group mb-3">
+              <label class="form-label">Full Name *</label>
+              <input type="text" id="modal-student-name" class="form-control" placeholder="e.g. Jessica Taylor" required />
+            </div>
+            <div class="form-group mb-3">
+              <label class="form-label">Roll Number *</label>
+              <input type="text" id="modal-student-roll" class="form-control" placeholder="e.g. CS-2024-42" required />
+            </div>
+            <div class="form-group mb-3">
+              <label class="form-label">Department *</label>
+              <select id="modal-student-dept" class="form-control" required>
+                <option value="Computer Science">Computer Science</option>
+                <option value="Electrical Engineering">Electrical Engineering</option>
+                <option value="Mechanical Engineering">Mechanical Engineering</option>
+                <option value="Information Technology">Information Technology</option>
+                <option value="Business Admin">Business Admin</option>
+              </select>
+            </div>
+            <div class="form-group mb-3">
+              <label class="form-label">Email Address</label>
+              <input type="email" id="modal-student-email" class="form-control" placeholder="jessica@student.edu" />
+            </div>
+            <div class="form-group mb-3">
+              <label class="form-label">Phone Number</label>
+              <input type="text" id="modal-student-phone" class="form-control" placeholder="+1 555-0199" />
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-close="modal-add-student">Cancel</button>
+          <button class="btn btn-primary" id="btn-save-student">Save Student</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: MANUAL ATTENDANCE ENTRY -->
+    <div class="modal-backdrop" id="modal-manual-attendance">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h5>Manual Attendance Entry</h5>
+          <button class="btn-close-modal" data-close="modal-manual-attendance">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form id="form-manual-attendance">
+            <div class="form-group mb-3">
+              <label class="form-label">Select Student</label>
+              <select id="manual-student-select" class="form-control" required></select>
+            </div>
+            <div class="form-group mb-3">
+              <label class="form-label">Date</label>
+              <input type="date" id="manual-date-input" class="form-control" required />
+            </div>
+            <div class="form-group mb-3">
+              <label class="form-label">Attendance Status</label>
+              <select id="manual-status-select" class="form-control" required>
+                <option value="Present">Present</option>
+                <option value="Late">Late</option>
+                <option value="Absent">Absent</option>
+              </select>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-close="modal-manual-attendance">Cancel</button>
+          <button class="btn btn-primary" id="btn-submit-manual-attendance">Submit Attendance</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- MODAL: QUICK ENROLL FACE FROM CAMERA SCAN -->
+    <div class="modal-backdrop" id="modal-quick-enroll">
+      <div class="modal-box" style="max-width: 540px;">
+        <div class="modal-header">
+          <h5><i class="fa-solid fa-camera-retro text-accent me-2"></i> Register New Face & Mark Attendance</h5>
+          <button class="btn-close-modal" data-close="modal-quick-enroll">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="quick-photo-preview-box text-center mb-3">
+            <img id="quick-enroll-photo-preview" src="" alt="Captured Face Photo" class="captured-face-thumbnail" />
+            <p class="text-muted small mt-1"><i class="fa-solid fa-circle-check text-success me-1"></i> Live Camera Photo Captured</p>
+          </div>
+
+          <form id="form-quick-enroll">
+            <div class="row g-2">
+              <div class="col-6 mb-3">
+                <label class="form-label">Student ID *</label>
+                <input type="text" id="quick-student-id" class="form-control" placeholder="STU-1007" required />
+              </div>
+              <div class="col-6 mb-3">
+                <label class="form-label">Full Name *</label>
+                <input type="text" id="quick-name" class="form-control" placeholder="e.g. Jessica Taylor" required />
+              </div>
+            </div>
+
+            <div class="row g-2">
+              <div class="col-6 mb-3">
+                <label class="form-label">Roll Number *</label>
+                <input type="text" id="quick-roll" class="form-control" placeholder="e.g. CS-2024-42" required />
+              </div>
+              <div class="col-6 mb-3">
+                <label class="form-label">Department *</label>
+                <select id="quick-dept" class="form-control" required>
+                  <option value="Computer Science">Computer Science</option>
+                  <option value="Electrical Engineering">Electrical Engineering</option>
+                  <option value="Mechanical Engineering">Mechanical Engineering</option>
+                  <option value="Information Technology">Information Technology</option>
+                  <option value="Business Admin">Business Admin</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group mb-3">
+              <label class="form-label">Email Address</label>
+              <input type="email" id="quick-email" class="form-control" placeholder="student@institution.edu" />
+            </div>
+
+            <div class="form-check form-switch mb-2">
+              <input class="form-check-input" type="checkbox" id="quick-mark-attendance" checked>
+              <label class="form-check-label fw-bold text-success" for="quick-mark-attendance">Automatically mark attendance as PRESENT for today</label>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-secondary" data-close="modal-quick-enroll">Cancel</button>
+          <button class="btn btn-primary" id="btn-save-quick-enroll">
+            <i class="fa-solid fa-floppy-disk me-2"></i> Save & Mark Attendance
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toast Notifications Container -->
+    <div id="toast-container" class="toast-container"></div>
+
+  </div>
+
+  <!-- App JavaScript Modules -->
+  <script src="js/app.js"></script>
+  <script src="js/face-ai.js"></script>
+  <script src="js/enrollment.js"></script>
+  <script src="js/reports.js"></script>
+</body>
+</html>
