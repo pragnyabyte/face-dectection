@@ -122,6 +122,21 @@ async function initDatabase() {
         if (!colNames.includes('photo_path')) {
           db.run("ALTER TABLE students ADD COLUMN photo_path TEXT");
         }
+        if (!colNames.includes('parent_name')) {
+          db.run("ALTER TABLE students ADD COLUMN parent_name TEXT");
+        }
+        if (!colNames.includes('parent_mobile')) {
+          db.run("ALTER TABLE students ADD COLUMN parent_mobile TEXT");
+        }
+        if (!colNames.includes('parent_whatsapp')) {
+          db.run("ALTER TABLE students ADD COLUMN parent_whatsapp TEXT");
+        }
+        if (!colNames.includes('parent_email')) {
+          db.run("ALTER TABLE students ADD COLUMN parent_email TEXT");
+        }
+        if (!colNames.includes('emergency_contact')) {
+          db.run("ALTER TABLE students ADD COLUMN emergency_contact TEXT");
+        }
 
         // Face Embeddings Table
         db.run(`
@@ -153,16 +168,69 @@ async function initDatabase() {
           )
         `);
 
-        // System Notifications Table
+        // System Notifications & Parent Delivery Logs Table
         db.run(`
           CREATE TABLE IF NOT EXISTS notifications (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id TEXT,
+            parent_name TEXT,
+            email TEXT,
+            phone_number TEXT,
             title TEXT NOT NULL,
             message TEXT NOT NULL,
             type TEXT DEFAULT 'info',
+            notification_type TEXT DEFAULT 'All',
+            date TEXT,
+            time TEXT,
+            timestamp INTEGER,
+            status TEXT DEFAULT 'Sent',
+            error_message TEXT,
+            delivery_details TEXT,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
           )
         `);
+
+        const notifCols = await dbQuery("PRAGMA table_info(notifications)");
+        const notifColNames = notifCols.map(c => c.name);
+        if (!notifColNames.includes('student_id')) db.run("ALTER TABLE notifications ADD COLUMN student_id TEXT");
+        if (!notifColNames.includes('parent_name')) db.run("ALTER TABLE notifications ADD COLUMN parent_name TEXT");
+        if (!notifColNames.includes('email')) db.run("ALTER TABLE notifications ADD COLUMN email TEXT");
+        if (!notifColNames.includes('phone_number')) db.run("ALTER TABLE notifications ADD COLUMN phone_number TEXT");
+        if (!notifColNames.includes('notification_type')) db.run("ALTER TABLE notifications ADD COLUMN notification_type TEXT DEFAULT 'All'");
+        if (!notifColNames.includes('date')) db.run("ALTER TABLE notifications ADD COLUMN date TEXT");
+        if (!notifColNames.includes('time')) db.run("ALTER TABLE notifications ADD COLUMN time TEXT");
+        if (!notifColNames.includes('timestamp')) db.run("ALTER TABLE notifications ADD COLUMN timestamp INTEGER");
+        if (!notifColNames.includes('status')) db.run("ALTER TABLE notifications ADD COLUMN status TEXT DEFAULT 'Sent'");
+        if (!notifColNames.includes('error_message')) db.run("ALTER TABLE notifications ADD COLUMN error_message TEXT");
+        if (!notifColNames.includes('delivery_details')) db.run("ALTER TABLE notifications ADD COLUMN delivery_details TEXT");
+
+        // Notification Settings Table
+        await dbRun(`
+          CREATE TABLE IF NOT EXISTS notification_settings (
+            id INTEGER PRIMARY KEY DEFAULT 1,
+            email_enabled INTEGER DEFAULT 1,
+            whatsapp_enabled INTEGER DEFAULT 1,
+            sms_enabled INTEGER DEFAULT 1,
+            smtp_host TEXT DEFAULT 'smtp.gmail.com',
+            smtp_port INTEGER DEFAULT 587,
+            smtp_user TEXT DEFAULT '',
+            smtp_pass TEXT DEFAULT '',
+            smtp_from TEXT DEFAULT '',
+            twilio_account_sid TEXT DEFAULT '',
+            twilio_auth_token TEXT DEFAULT '',
+            twilio_phone TEXT DEFAULT '',
+            twilio_whatsapp_phone TEXT DEFAULT '',
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+
+        const settingsCount = await dbGet('SELECT COUNT(*) as count FROM notification_settings');
+        if (settingsCount.count === 0) {
+          await dbRun(
+            `INSERT INTO notification_settings (id, email_enabled, whatsapp_enabled, sms_enabled, smtp_host, smtp_port, smtp_user, smtp_pass, smtp_from, twilio_account_sid, twilio_auth_token, twilio_phone, twilio_whatsapp_phone)
+             VALUES (1, 1, 1, 1, 'smtp.gmail.com', 587, '', '', 'notifications@institution.edu', '', '', '', '')`
+          );
+        }
 
         // Seed Users if empty
         const userCount = await dbGet('SELECT COUNT(*) as count FROM users');
@@ -191,20 +259,20 @@ async function initDatabase() {
         const studentCount = await dbGet('SELECT COUNT(*) as count FROM students');
         if (studentCount.count === 0) {
           const sampleStudents = [
-            ['STU-101', 'Rahul Kumar', '101', 'REG-2024-101', 'Computer Science', 'Computer Science', 'Semester 6', 'A', '+91 9876543210', '+91 9876543210', 'rahul.k@institution.edu', 'New Delhi, India', 0],
-            ['STU-102', 'Amit Das', '102', 'REG-2024-102', 'Information Technology', 'Information Technology', 'Semester 6', 'B', '+91 9876543211', '+91 9876543211', 'amit.d@institution.edu', 'Kolkata, India', 0],
-            ['STU-103', 'Priya Sharma', '103', 'REG-2024-103', 'Electrical Engineering', 'Electrical Engineering', 'Semester 4', 'A', '+91 9876543212', '+91 9876543212', 'priya.s@institution.edu', 'Mumbai, India', 0],
-            ['STU-104', 'Sneha Patel', '104', 'REG-2024-104', 'Mechanical Engineering', 'Mechanical Engineering', 'Semester 4', 'A', '+91 9876543213', '+91 9876543213', 'sneha.p@institution.edu', 'Ahmedabad, India', 0],
-            ['STU-105', 'Vikram Singh', '105', 'REG-2024-105', 'Civil Engineering', 'Civil Engineering', 'Semester 2', 'B', '+91 9876543214', '+91 9876543214', 'vikram.s@institution.edu', 'Jaipur, India', 0]
+            ['STU-101', 'Rahul Kumar', '101', 'REG-2024-101', 'Computer Science', 'Computer Science', 'Semester 6', 'A', '+91 9876543210', '+91 9876543210', 'rahul.k@institution.edu', 'Mr. Suresh Kumar', '+91 9876500001', '+91 9876500001', 'suresh.k@gmail.com', '+91 9876500099', 'New Delhi, India', 0],
+            ['STU-102', 'Amit Das', '102', 'REG-2024-102', 'Information Technology', 'Information Technology', 'Semester 6', 'B', '+91 9876543211', '+91 9876543211', 'amit.d@institution.edu', 'Mrs. Sunita Das', '+91 9876500002', '+91 9876500002', 'sunita.d@gmail.com', '+91 9876500098', 'Kolkata, India', 0],
+            ['STU-103', 'Priya Sharma', '103', 'REG-2024-103', 'Electrical Engineering', 'Electrical Engineering', 'Semester 4', 'A', '+91 9876543212', '+91 9876543212', 'priya.s@institution.edu', 'Mr. Rajesh Sharma', '+91 9876500003', '+91 9876500003', 'rajesh.s@gmail.com', '+91 9876500097', 'Mumbai, India', 0],
+            ['STU-104', 'Sneha Patel', '104', 'REG-2024-104', 'Mechanical Engineering', 'Mechanical Engineering', 'Semester 4', 'A', '+91 9876543213', '+91 9876543213', 'sneha.p@institution.edu', 'Mrs. Anjali Patel', '+91 9876500004', '+91 9876500004', 'anjali.p@gmail.com', '+91 9876500096', 'Ahmedabad, India', 0],
+            ['STU-105', 'Vikram Singh', '105', 'REG-2024-105', 'Civil Engineering', 'Civil Engineering', 'Semester 2', 'B', '+91 9876543214', '+91 9876543214', 'vikram.s@institution.edu', 'Mr. Mahendra Singh', '+91 9876500005', '+91 9876500005', 'mahendra.s@gmail.com', '+91 9876500095', 'Jaipur, India', 0]
           ];
 
           for (const s of sampleStudents) {
             await dbRun(
-              `INSERT INTO students (student_id, name, roll_number, registration_number, branch, department, semester, section, mobile, phone, email, address, face_enrolled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              `INSERT INTO students (student_id, name, roll_number, registration_number, branch, department, semester, section, mobile, phone, email, parent_name, parent_mobile, parent_whatsapp, parent_email, emergency_contact, address, face_enrolled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
               s
             );
           }
-          console.log('Seeded sample student directory with 9 complete fields');
+          console.log('Seeded sample student directory with complete parent contact information');
 
           // Seed Sample Attendance Records
           const today = new Date().toISOString().split('T')[0];

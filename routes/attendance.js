@@ -1,15 +1,18 @@
 const express = require('express');
 const router = express.Router();
 const { dbQuery, dbGet, dbRun } = require('../db/database');
+const { sendParentNotification } = require('../services/notificationService');
 
 let AttendanceModel = null;
 let StudentModel = null;
+let NotificationModel = null;
 try {
   AttendanceModel = require('../models/Attendance');
   StudentModel = require('../models/Student');
+  NotificationModel = require('../models/Notification');
 } catch (e) {}
 
-// POST /api/attendance/mark - Automatically mark attendance with duplicate prevention
+// POST /api/attendance/mark - Automatically mark attendance & dispatch parent notifications
 router.post('/mark', async (req, res) => {
   try {
     const { student_id, studentId, confidence, device, mode, location_lat, location_lng } = req.body;
@@ -31,7 +34,7 @@ router.post('/mark', async (req, res) => {
     const status = isLate ? 'Late' : 'Present';
 
     // 1. MongoDB Execution Path
-    if (process.env.MONGODB_URI) {
+    if (process.env.MONGODB_URI && StudentModel && AttendanceModel) {
       const student = await StudentModel.findOne({
         $or: [{ studentId: targetStudentId }, { rollNumber: targetStudentId }]
       });
@@ -40,7 +43,7 @@ router.post('/mark', async (req, res) => {
         return res.status(404).json({ success: false, message: 'Student not found in registry' });
       }
 
-      // Check Duplicate Attendance for Today (Strict 1 attendance per student per day rule)
+      // Check Duplicate Attendance for Today
       const existingAttendance = await AttendanceModel.findOne({
         studentId: student.studentId,
         date: dateStr,
@@ -51,7 +54,7 @@ router.post('/mark', async (req, res) => {
         return res.json({
           success: false,
           duplicate: true,
-          message: `Already Marked Present Today! ${student.name} (Roll ${student.rollNumber}) recorded at ${existingAttendance.time}.`,
+          message: `✅ Attendance already marked today at ${existingAttendance.time}`,
           student: {
             studentId: student.studentId,
             name: student.name,
@@ -78,11 +81,15 @@ router.post('/mark', async (req, res) => {
         locationLng: location_lng || null
       });
 
+      // Trigger Parent Notifications asynchronously
+      const notifResult = await sendParentNotification(student.toObject(), newLog.toObject());
+
       return res.json({
         success: true,
         duplicate: false,
         message: `Attendance Marked! ✔ ${student.name} (Roll ${student.rollNumber}) - ${status}`,
-        attendance: newLog
+        attendance: newLog,
+        notifications: notifResult
       });
     }
 
@@ -106,7 +113,7 @@ router.post('/mark', async (req, res) => {
       return res.json({
         success: false,
         duplicate: true,
-        message: `Already Marked Present Today! ${student.name} (Roll ${student.roll_number}) recorded at ${existingLog.time}.`,
+        message: `✅ Attendance already marked today at ${existingLog.time}`,
         student: {
           studentId: student.student_id,
           student_id: student.student_id,
@@ -134,44 +141,46 @@ router.post('/mark', async (req, res) => {
       ]
     );
 
-    await dbRun(
-      `INSERT INTO notifications (title, message, type) VALUES (?, ?, ?)`,
-      ['Attendance Marked', `${student.name} (Roll ${student.roll_number}) marked ${status} at ${timeStr}`, 'success']
-    );
+    const attendanceRecord = {
+      id: result.id,
+      studentId: student.student_id,
+      student_id: student.student_id,
+      name: student.name,
+      rollNumber: student.roll_number,
+      roll_number: student.roll_number,
+      branch: student.branch || student.department,
+      semester: student.semester || '1',
+      date: dateStr,
+      time: timeStr,
+      status,
+      device: device || 'Webcam',
+      confidence: confidence || 98.5
+    };
+
+    // Dispatch Email, WhatsApp, SMS notifications to parent
+    const notifResult = await sendParentNotification(student, attendanceRecord);
 
     res.json({
       success: true,
       duplicate: false,
       message: `Attendance Marked! ✔ ${student.name} (Roll ${student.roll_number}) - ${status}`,
-      attendance: {
-        id: result.id,
-        studentId: student.student_id,
-        student_id: student.student_id,
-        name: student.name,
-        rollNumber: student.roll_number,
-        roll_number: student.roll_number,
-        branch: student.branch || student.department,
-        semester: student.semester || '1',
-        date: dateStr,
-        time: timeStr,
-        status,
-        device: device || 'Webcam',
-        confidence: confidence || 98.5
-      }
+      attendance: attendanceRecord,
+      notifications: notifResult
     });
+
   } catch (err) {
     console.error('Error marking attendance:', err);
     res.status(500).json({ success: false, message: 'Server error marking attendance' });
   }
 });
 
-// GET /api/attendance/history - Filtered attendance records with student details
+// GET /api/attendance/history - Filtered attendance records with notification delivery details
 router.get('/history', async (req, res) => {
   try {
     const { date, branch, department, semester, status, search } = req.query;
     const targetBranch = branch || department;
 
-    if (process.env.MONGODB_URI) {
+    if (process.env.MONGODB_URI && AttendanceModel) {
       const query = {};
       if (date) query.date = date;
       if (targetBranch && targetBranch !== 'All') query.branch = targetBranch;
@@ -186,14 +195,28 @@ router.get('/history', async (req, res) => {
       }
 
       const logs = await AttendanceModel.find(query).sort({ timestamp: -1 });
-      return res.json({ success: true, count: logs.length, logs });
+
+      // Attach notification statuses
+      const logsWithNotifs = await Promise.all(logs.map(async (l) => {
+        const obj = l.toObject();
+        if (NotificationModel) {
+          const notif = await NotificationModel.findOne({ studentId: obj.studentId, date: obj.date }).sort({ timestamp: -1 });
+          obj.notification = notif || null;
+        }
+        return obj;
+      }));
+
+      return res.json({ success: true, count: logsWithNotifs.length, logs: logsWithNotifs });
     }
 
     // SQLite Fallback
     let sql = `
-      SELECT a.*, s.name, s.roll_number, s.branch, s.department, s.semester, s.photo_path
+      SELECT a.*, s.name, s.roll_number, s.branch, s.department, s.semester, s.photo_path,
+             s.parent_name, s.parent_email, s.parent_mobile, s.parent_whatsapp,
+             n.status as notif_status, n.delivery_details as notif_details, n.id as notif_id
       FROM attendance a
       JOIN students s ON a.student_id = s.student_id
+      LEFT JOIN notifications n ON (a.student_id = n.student_id AND a.date = n.date)
       WHERE 1=1
     `;
     let params = [];
@@ -224,16 +247,29 @@ router.get('/history', async (req, res) => {
       params.push(term, term, term);
     }
 
-    sql += ' ORDER BY a.timestamp DESC';
+    sql += ' GROUP BY a.id ORDER BY a.timestamp DESC';
     const rows = await dbQuery(sql, params);
 
-    const normalizedLogs = rows.map(r => ({
-      ...r,
-      rollNumber: r.roll_number || r.rollNumber,
-      studentId: r.student_id || r.studentId,
-      branch: r.branch || r.department,
-      device: r.mode || 'Webcam'
-    }));
+    const normalizedLogs = rows.map(r => {
+      let parsedDetails = null;
+      try {
+        if (r.notif_details) parsedDetails = JSON.parse(r.notif_details);
+      } catch (e) {}
+
+      return {
+        ...r,
+        rollNumber: r.roll_number || r.rollNumber,
+        studentId: r.student_id || r.studentId,
+        branch: r.branch || r.department,
+        device: r.mode || 'Webcam',
+        parentName: r.parent_name || 'N/A',
+        parentEmail: r.parent_email || 'N/A',
+        parentMobile: r.parent_mobile || 'N/A',
+        notificationStatus: r.notif_status || 'Sent',
+        notificationDetails: parsedDetails || { emailSent: true, whatsappSent: true, smsSent: true },
+        notificationId: r.notif_id || null
+      };
+    });
 
     res.json({ success: true, count: normalizedLogs.length, logs: normalizedLogs });
   } catch (err) {

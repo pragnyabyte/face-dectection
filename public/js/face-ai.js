@@ -331,7 +331,20 @@ class FaceAIEngine {
       if (data.success) {
         this.playSuccessChime();
         this.showRecognitionOverlay(student.name, `Roll: ${student.rollNumber || student.roll_number} | ${student.branch}`, data.attendance.status, data.attendance.time, false);
-        window.showToast(`✔ Attendance Marked: ${student.name} (${data.attendance.status})`, 'success');
+        
+        window.showToast(`✅ Attendance marked successfully: ${student.name}`, 'success');
+
+        // Display individual parent channel notification toasts
+        if (data.notifications) {
+          const n = data.notifications;
+          if (n.emailSent) window.showToast(`📧 Email sent to parent (${student.parent_email || student.email || 'Parent'})`, 'success');
+          if (n.whatsappSent) window.showToast(`📱 WhatsApp notification delivered`, 'success');
+          if (n.smsSent) window.showToast(`📩 SMS notification delivered`, 'success');
+
+          if (!n.sent && n.overallStatus === 'Failed') {
+            window.showToast(`⚠ Attendance saved successfully. Notification delivery failed.`, 'warning');
+          }
+        }
         
         // Add item to Live Attendance Feed right sidebar
         this.addLiveFeedItem(student.name, student.rollNumber || student.roll_number, student.branch, data.attendance.time, data.attendance.status);
@@ -339,9 +352,9 @@ class FaceAIEngine {
         if (window.loadDashboardStats) window.loadDashboardStats();
 
       } else if (data.duplicate) {
-        // Strict Duplicate Prevention Alert
+        // Strict Duplicate Prevention Alert (No re-notification)
         this.showRecognitionOverlay(student.name, `Roll: ${student.rollNumber || student.roll_number} | ${student.branch}`, 'ALREADY MARKED TODAY', '', true);
-        window.showToast(data.message, 'warning');
+        window.showToast(data.message || `✅ Attendance already marked today`, 'warning');
       }
     } catch (err) {
       console.error('Attendance mark API error:', err);
@@ -593,6 +606,17 @@ class FaceAIEngine {
       return;
     }
 
+    const parentName = document.getElementById('reg-parent-name')?.value.trim() || '';
+    const parentMobile = document.getElementById('reg-parent-mobile')?.value.trim() || '';
+    const parentWhatsApp = document.getElementById('reg-parent-whatsapp')?.value.trim() || '';
+    const parentEmail = document.getElementById('reg-parent-email')?.value.trim() || '';
+    const emergencyContact = document.getElementById('reg-emergency-contact')?.value.trim() || '';
+
+    if (!parentName || !parentMobile || !parentEmail) {
+      window.showToast('Parent Name, Parent Mobile, and Parent Email are required fields.', 'warning');
+      return;
+    }
+
     const studentData = {
       name: document.getElementById('reg-name').value.trim(),
       rollNumber: document.getElementById('reg-roll').value.trim(),
@@ -605,6 +629,16 @@ class FaceAIEngine {
       mobile: document.getElementById('reg-mobile').value.trim(),
       phone: document.getElementById('reg-mobile').value.trim(),
       email: document.getElementById('reg-email').value.trim(),
+      parentName,
+      parent_name: parentName,
+      parentMobile,
+      parent_mobile: parentMobile,
+      parentWhatsApp,
+      parent_whatsapp: parentWhatsApp,
+      parentEmail,
+      parent_email: parentEmail,
+      emergencyContact,
+      emergency_contact: emergencyContact,
       address: document.getElementById('reg-address').value.trim(),
       studentId: `STU-${document.getElementById('reg-roll').value.trim()}`,
       student_id: `STU-${document.getElementById('reg-roll').value.trim()}`,

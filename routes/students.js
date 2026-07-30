@@ -15,7 +15,7 @@ router.get('/', async (req, res) => {
     const { branch, department, semester, search } = req.query;
     const targetBranch = branch || department;
 
-    if (process.env.MONGODB_URI) {
+    if (process.env.MONGODB_URI && StudentModel) {
       const query = {};
       if (targetBranch && targetBranch !== 'All') {
         query.branch = targetBranch;
@@ -28,7 +28,8 @@ router.get('/', async (req, res) => {
           { name: new RegExp(search, 'i') },
           { rollNumber: new RegExp(search, 'i') },
           { registrationNumber: new RegExp(search, 'i') },
-          { studentId: new RegExp(search, 'i') }
+          { studentId: new RegExp(search, 'i') },
+          { parentName: new RegExp(search, 'i') }
         ];
       }
       const students = await StudentModel.find(query).sort({ createdAt: -1 });
@@ -50,9 +51,9 @@ router.get('/', async (req, res) => {
     }
 
     if (search) {
-      sql += ' AND (name LIKE ? OR student_id LIKE ? OR roll_number LIKE ? OR registration_number LIKE ?)';
+      sql += ' AND (name LIKE ? OR student_id LIKE ? OR roll_number LIKE ? OR registration_number LIKE ? OR parent_name LIKE ?)';
       const term = `%${search}%`;
-      params.push(term, term, term, term);
+      params.push(term, term, term, term, term);
     }
 
     sql += ' ORDER BY id DESC';
@@ -65,7 +66,12 @@ router.get('/', async (req, res) => {
       registrationNumber: s.registration_number || s.registrationNumber,
       branch: s.branch || s.department,
       studentId: s.student_id || s.studentId,
-      photoPath: s.photo_path || s.photoPath || ''
+      photoPath: s.photo_path || s.photoPath || '',
+      parentName: s.parent_name || s.parentName || '',
+      parentMobile: s.parent_mobile || s.parentMobile || '',
+      parentWhatsApp: s.parent_whatsapp || s.parentWhatsApp || '',
+      parentEmail: s.parent_email || s.parentEmail || '',
+      emergencyContact: s.emergency_contact || s.emergencyContact || ''
     }));
 
     res.json({ success: true, count: normalized.length, students: normalized });
@@ -80,7 +86,7 @@ router.get('/:student_id', async (req, res) => {
   try {
     const studentId = req.params.student_id;
 
-    if (process.env.MONGODB_URI) {
+    if (process.env.MONGODB_URI && StudentModel) {
       const student = await StudentModel.findOne({
         $or: [{ studentId }, { rollNumber: studentId }]
       });
@@ -103,7 +109,12 @@ router.get('/:student_id', async (req, res) => {
       registrationNumber: student.registration_number,
       branch: student.branch || student.department,
       studentId: student.student_id,
-      photoPath: student.photo_path
+      photoPath: student.photo_path,
+      parentName: student.parent_name || '',
+      parentMobile: student.parent_mobile || '',
+      parentWhatsApp: student.parent_whatsapp || '',
+      parentEmail: student.parent_email || '',
+      emergencyContact: student.emergency_contact || ''
     };
 
     res.json({ success: true, student: normalized, face_samples: embeddings.length, embeddings });
@@ -113,7 +124,7 @@ router.get('/:student_id', async (req, res) => {
   }
 });
 
-// POST /api/students - Add new student with all 9 fields
+// POST /api/students - Add new student with complete parent details
 router.post('/', async (req, res) => {
   try {
     const { 
@@ -125,6 +136,11 @@ router.post('/', async (req, res) => {
       section, 
       mobile, phone,
       email, 
+      parentName, parent_name,
+      parentMobile, parent_mobile,
+      parentWhatsApp, parent_whatsapp,
+      parentEmail, parent_email,
+      emergencyContact, emergency_contact,
       address 
     } = req.body;
 
@@ -132,6 +148,11 @@ router.post('/', async (req, res) => {
     const regNum = registrationNumber || registration_number;
     const bName = branch || department;
     const mobNum = mobile || phone;
+    const pName = parentName || parent_name || '';
+    const pMobile = parentMobile || parent_mobile || mobNum || '';
+    const pWhatsapp = parentWhatsApp || parent_whatsapp || pMobile || '';
+    const pEmail = parentEmail || parent_email || email || '';
+    const emContact = emergencyContact || emergency_contact || pMobile || '';
     const sId = req.body.studentId || req.body.student_id || `STU-${rNum || Date.now()}`;
 
     if (!name || !rNum || !bName) {
@@ -141,7 +162,7 @@ router.post('/', async (req, res) => {
       });
     }
 
-    if (process.env.MONGODB_URI) {
+    if (process.env.MONGODB_URI && StudentModel) {
       const existing = await StudentModel.findOne({
         $or: [{ rollNumber: rNum }, { registrationNumber: regNum }, { studentId: sId }]
       });
@@ -159,6 +180,11 @@ router.post('/', async (req, res) => {
         section: section || 'A',
         mobile: mobNum || '',
         email: email || '',
+        parentName: pName,
+        parentMobile: pMobile,
+        parentWhatsApp: pWhatsapp,
+        parentEmail: pEmail,
+        emergencyContact: emContact,
         address: address || ''
       });
 
@@ -176,14 +202,14 @@ router.post('/', async (req, res) => {
     }
 
     const result = await dbRun(
-      `INSERT INTO students (student_id, name, roll_number, registration_number, branch, department, semester, section, mobile, phone, email, address, face_enrolled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
-      [sId, name, rNum, regNum || `REG-${rNum}`, bName, bName, semester || 'Semester 1', section || 'A', mobNum || '', mobNum || '', email || '', address || '']
+      `INSERT INTO students (student_id, name, roll_number, registration_number, branch, department, semester, section, mobile, phone, email, parent_name, parent_mobile, parent_whatsapp, parent_email, emergency_contact, address, face_enrolled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      [sId, name, rNum, regNum || `REG-${rNum}`, bName, bName, semester || 'Semester 1', section || 'A', mobNum || '', mobNum || '', email || '', pName, pMobile, pWhatsapp, pEmail, emContact, address || '']
     );
 
     res.status(201).json({
       success: true,
       message: 'Student registered successfully!',
-      student: { id: result.id, student_id: sId, studentId: sId, name, roll_number: rNum, rollNumber: rNum, branch: bName }
+      student: { id: result.id, student_id: sId, studentId: sId, name, roll_number: rNum, rollNumber: rNum, branch: bName, parentName: pName }
     });
   } catch (err) {
     console.error('Error adding student:', err);
@@ -191,7 +217,7 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PUT /api/students/:student_id - Update student information
+// PUT /api/students/:student_id - Update student & parent details
 router.put('/:student_id', async (req, res) => {
   try {
     const studentId = req.params.student_id;
@@ -204,6 +230,11 @@ router.put('/:student_id', async (req, res) => {
       section, 
       mobile, phone, 
       email, 
+      parentName, parent_name,
+      parentMobile, parent_mobile,
+      parentWhatsApp, parent_whatsapp,
+      parentEmail, parent_email,
+      emergencyContact, emergency_contact,
       address 
     } = req.body;
 
@@ -211,8 +242,13 @@ router.put('/:student_id', async (req, res) => {
     const regNum = registrationNumber || registration_number;
     const bName = branch || department;
     const mobNum = mobile || phone;
+    const pName = parentName || parent_name || '';
+    const pMobile = parentMobile || parent_mobile || mobNum || '';
+    const pWhatsapp = parentWhatsApp || parent_whatsapp || pMobile || '';
+    const pEmail = parentEmail || parent_email || email || '';
+    const emContact = emergencyContact || emergency_contact || pMobile || '';
 
-    if (process.env.MONGODB_URI) {
+    if (process.env.MONGODB_URI && StudentModel) {
       const student = await StudentModel.findOneAndUpdate(
         { $or: [{ studentId }, { rollNumber: studentId }] },
         {
@@ -224,6 +260,11 @@ router.put('/:student_id', async (req, res) => {
           section,
           mobile: mobNum,
           email,
+          parentName: pName,
+          parentMobile: pMobile,
+          parentWhatsApp: pWhatsapp,
+          parentEmail: pEmail,
+          emergencyContact: emContact,
           address
         },
         { new: true }
@@ -238,8 +279,8 @@ router.put('/:student_id', async (req, res) => {
     }
 
     await dbRun(
-      `UPDATE students SET name = ?, roll_number = ?, registration_number = ?, branch = ?, department = ?, semester = ?, section = ?, mobile = ?, phone = ?, email = ?, address = ? WHERE id = ?`,
-      [name, rNum, regNum, bName, bName, semester, section, mobNum, mobNum, email, address, existing.id]
+      `UPDATE students SET name = ?, roll_number = ?, registration_number = ?, branch = ?, department = ?, semester = ?, section = ?, mobile = ?, phone = ?, email = ?, parent_name = ?, parent_mobile = ?, parent_whatsapp = ?, parent_email = ?, emergency_contact = ?, address = ? WHERE id = ?`,
+      [name, rNum, regNum, bName, bName, semester, section, mobNum, mobNum, email, pName, pMobile, pWhatsapp, pEmail, emContact, address, existing.id]
     );
 
     res.json({ success: true, message: 'Student details updated successfully' });
@@ -254,7 +295,7 @@ router.delete('/:student_id', async (req, res) => {
   try {
     const studentId = req.params.student_id;
 
-    if (process.env.MONGODB_URI) {
+    if (process.env.MONGODB_URI && StudentModel) {
       await StudentModel.deleteOne({ $or: [{ studentId }, { rollNumber: studentId }] });
       return res.json({ success: true, message: 'Student deleted successfully' });
     }

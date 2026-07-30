@@ -35,7 +35,7 @@ window.showToast = function(message, type = 'info') {
 
 // Switch Tab Navigation Helper
 window.switchTab = function(tabId) {
-  const links = document.querySelectorAll('.nav-link');
+  const links = document.querySelectorAll('.nav-link, .mobile-nav-btn');
   const views = document.querySelectorAll('.tab-view');
 
   links.forEach(l => {
@@ -51,6 +51,7 @@ window.switchTab = function(tabId) {
   if (tabId === 'dashboard') loadDashboardStats();
   if (tabId === 'students') loadStudentsDirectory();
   if (tabId === 'attendance-history') loadAttendanceHistory();
+  if (tabId === 'settings') loadNotificationSettings();
 };
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -60,6 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initThemeToggle();
   initModals();
   initExportHandlers();
+  initNotificationSettingsForm();
 });
 
 // Live Clock Initializer
@@ -97,7 +99,7 @@ function initAuth() {
 
 // Navigation Tab Switchers
 function initNavigation() {
-  const links = document.querySelectorAll('.nav-link');
+  const links = document.querySelectorAll('.nav-link, .mobile-nav-btn');
   links.forEach(link => {
     link.addEventListener('click', () => {
       const tabId = link.getAttribute('data-tab');
@@ -157,9 +159,69 @@ async function loadDashboardStats() {
       renderDailyTrendChart(data.trend);
       renderBranchBreakdownChart(data.departments);
     }
+
+    // Load Parent Notification KPI Analytics
+    loadParentNotificationDashboard();
+
   } catch (err) {
     console.error('Error loading dashboard stats:', err);
   }
+}
+
+// Parent Notification Dashboard Analytics & Live Feed Loader
+async function loadParentNotificationDashboard() {
+  try {
+    const res = await fetch('/api/notifications/today');
+    const data = await res.json();
+
+    if (data.success && data.stats) {
+      const s = data.stats;
+      document.getElementById('notif-kpi-total').textContent = s.totalToday || 0;
+      document.getElementById('notif-kpi-email').textContent = s.emailSuccess || 0;
+      document.getElementById('notif-kpi-whatsapp').textContent = s.whatsappSuccess || 0;
+      document.getElementById('notif-kpi-sms').textContent = s.smsSuccess || 0;
+      document.getElementById('notif-kpi-failed-badge').textContent = `${s.failedCount || 0} Failed`;
+
+      renderRecentParentNotificationsFeed(data.recentLogs || []);
+    }
+  } catch (err) {
+    console.error('Error loading parent notification analytics:', err);
+  }
+}
+
+function renderRecentParentNotificationsFeed(logs) {
+  const tbody = document.getElementById('dashboard-notif-table-body');
+  if (!tbody) return;
+
+  if (logs.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="5" class="text-center p-3 text-muted">No parent notifications dispatched today yet.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = logs.map(l => {
+    const sName = l.studentName || l.title || 'Student';
+    const pName = l.parentName || l.parent_name || 'Parent';
+    const timeStr = l.time || 'Today';
+
+    const details = l.deliveryDetails || {};
+    const emailBadge = details.emailSent ? `<span class="badge bg-info text-dark me-1"><i class="fa-solid fa-envelope"></i> Email</span>` : '';
+    const waBadge = details.whatsappSent ? `<span class="badge bg-success me-1"><i class="fa-brands fa-whatsapp"></i> WhatsApp</span>` : '';
+    const smsBadge = details.smsSent ? `<span class="badge bg-warning text-dark me-1"><i class="fa-solid fa-comment-sms"></i> SMS</span>` : '';
+
+    let statusBadge = `<span class="badge bg-success"><i class="fa-solid fa-check me-1"></i> Delivered</span>`;
+    if (l.status === 'Partial') statusBadge = `<span class="badge bg-warning text-dark"><i class="fa-solid fa-triangle-exclamation me-1"></i> Partial</span>`;
+    if (l.status === 'Failed') statusBadge = `<span class="badge bg-danger"><i class="fa-solid fa-xmark me-1"></i> Failed</span>`;
+
+    return `
+      <tr>
+        <td class="fw-bold">${sName}</td>
+        <td>${pName}</td>
+        <td><small class="text-muted">${timeStr}</small></td>
+        <td>${emailBadge}${waBadge}${smsBadge}</td>
+        <td>${statusBadge}</td>
+      </tr>
+    `;
+  }).join('');
 }
 
 function renderDailyTrendChart(trendData) {
@@ -282,6 +344,9 @@ function renderStudentsTable(students) {
         <td>${s.mobile || s.phone || 'N/A'}</td>
         <td>${statusBadge}</td>
         <td>
+          <button class="btn btn-sm btn-outline-primary me-1" onclick="showStudentQrModal('${sId}', '${s.name.replace(/'/g, "\\'")}', '${rNum}')" title="Student QR Badge">
+            <i class="fa-solid fa-qrcode"></i>
+          </button>
           <button class="btn btn-sm btn-outline-danger" onclick="deleteStudent('${sId}')" title="Delete Student">
             <i class="fa-solid fa-trash"></i>
           </button>
@@ -314,7 +379,7 @@ window.deleteStudent = async function(sId) {
   }
 };
 
-// Attendance History Loader & Filters
+// Attendance History Loader & Parent Notification Dispatches
 async function loadAttendanceHistory() {
   const date = document.getElementById('history-date-filter')?.value || '';
   const branch = document.getElementById('history-branch-filter')?.value || 'All';
@@ -340,7 +405,7 @@ function renderAttendanceHistoryTable(logs) {
   if (!tbody) return;
 
   if (logs.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9" class="text-center p-4 text-muted">No attendance logs found for selected criteria.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="10" class="text-center p-4 text-muted">No attendance logs found for selected criteria.</td></tr>`;
     return;
   }
 
@@ -348,24 +413,44 @@ function renderAttendanceHistoryTable(logs) {
     const rNum = l.rollNumber || l.roll_number;
     const sId = l.studentId || l.student_id;
     const branch = l.branch || l.department || 'Computer Science';
-    const device = l.device || l.mode || 'Webcam';
-    const conf = l.confidence ? `${l.confidence}%` : '98.5%';
+    const pName = l.parentName || l.parent_name || 'Guardian';
+    const pEmail = l.parentEmail || l.parent_email || '';
 
     let statusBadge = '<span class="badge bg-success">Present</span>';
     if (l.status === 'Late') statusBadge = '<span class="badge bg-warning text-dark">Late</span>';
     if (l.status === 'Absent') statusBadge = '<span class="badge bg-danger">Absent</span>';
+
+    const details = l.notificationDetails || { emailSent: true, whatsappSent: true, smsSent: true };
+    const emailBadge = details.emailSent 
+      ? `<span class="badge bg-info text-dark me-1" title="Email Delivered"><i class="fa-solid fa-envelope me-1"></i> Email Sent</span>`
+      : `<span class="badge bg-secondary me-1" title="Email Failed/Pending"><i class="fa-solid fa-envelope-open me-1"></i> Email Off</span>`;
+
+    const waBadge = details.whatsappSent 
+      ? `<span class="badge bg-success me-1" title="WhatsApp Delivered"><i class="fa-brands fa-whatsapp me-1"></i> WhatsApp Sent</span>`
+      : `<span class="badge bg-secondary me-1" title="WhatsApp Off"><i class="fa-brands fa-whatsapp me-1"></i> WA Off</span>`;
+
+    const smsBadge = details.smsSent 
+      ? `<span class="badge bg-warning text-dark me-1" title="SMS Delivered"><i class="fa-solid fa-comment-sms me-1"></i> SMS Sent</span>`
+      : `<span class="badge bg-secondary me-1" title="SMS Off"><i class="fa-solid fa-comment-sms me-1"></i> SMS Off</span>`;
+
+    const notifColHtml = `<div class="d-flex flex-wrap gap-1">${emailBadge}${waBadge}${smsBadge}</div>`;
+
+    const resendBtn = `<button class="btn btn-sm btn-outline-warning" onclick="resendParentNotification('${sId}')" title="Resend Parent Notification">
+      <i class="fa-solid fa-rotate-right me-1"></i> Resend
+    </button>`;
 
     return `
       <tr>
         <td>${l.date}</td>
         <td class="fw-bold">${l.time}</td>
         <td><code>${sId}</code></td>
-        <td>${l.name}</td>
+        <td class="fw-bold">${l.name}</td>
         <td><code>${rNum}</code></td>
         <td>${branch}</td>
         <td>${statusBadge}</td>
-        <td><i class="fa-solid fa-video text-accent me-1"></i> ${device}</td>
-        <td><strong class="text-success">${conf}</strong></td>
+        <td><small class="fw-semibold">${pName}</small><br><span class="extra-small text-muted">${pEmail}</span></td>
+        <td>${notifColHtml}</td>
+        <td>${resendBtn}</td>
       </tr>
     `;
   }).join('');
@@ -380,6 +465,93 @@ document.getElementById('btn-reset-history-filters')?.addEventListener('click', 
   loadAttendanceHistory();
 });
 
+// Global Resend Notification Helper
+window.resendParentNotification = async function(studentId) {
+  try {
+    window.showToast('Resending parent notification dispatches...', 'info');
+    const res = await fetch('/api/notifications/resend', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ student_id: studentId })
+    });
+    const data = await res.json();
+
+    if (data.success) {
+      window.showToast(`✅ ${data.message}`, 'success');
+      loadAttendanceHistory();
+      loadParentNotificationDashboard();
+    } else {
+      window.showToast(data.message || 'Failed to resend parent notification.', 'danger');
+    }
+  } catch (err) {
+    window.showToast('Error connecting to server for resend.', 'danger');
+  }
+};
+
+// Parent Notification Settings & API Credentials Loader/Saver
+async function loadNotificationSettings() {
+  try {
+    const res = await fetch('/api/notifications/settings');
+    const data = await res.json();
+
+    if (data.success && data.settings) {
+      const s = data.settings;
+      if (document.getElementById('setting-notif-email')) document.getElementById('setting-notif-email').checked = Boolean(s.emailEnabled);
+      if (document.getElementById('setting-notif-whatsapp')) document.getElementById('setting-notif-whatsapp').checked = Boolean(s.whatsappEnabled);
+      if (document.getElementById('setting-notif-sms')) document.getElementById('setting-notif-sms').checked = Boolean(s.smsEnabled);
+
+      if (document.getElementById('setting-smtp-host')) document.getElementById('setting-smtp-host').value = s.smtpHost || '';
+      if (document.getElementById('setting-smtp-port')) document.getElementById('setting-smtp-port').value = s.smtpPort || 587;
+      if (document.getElementById('setting-smtp-user')) document.getElementById('setting-smtp-user').value = s.smtpUser || '';
+      if (document.getElementById('setting-smtp-pass')) document.getElementById('setting-smtp-pass').value = s.smtpPass || '';
+      if (document.getElementById('setting-smtp-from')) document.getElementById('setting-smtp-from').value = s.smtpFrom || '';
+
+      if (document.getElementById('setting-twilio-sid')) document.getElementById('setting-twilio-sid').value = s.twilioAccountSid || '';
+      if (document.getElementById('setting-twilio-token')) document.getElementById('setting-twilio-token').value = s.twilioAuthToken || '';
+      if (document.getElementById('setting-twilio-phone')) document.getElementById('setting-twilio-phone').value = s.twilioPhone || '';
+      if (document.getElementById('setting-twilio-whatsapp')) document.getElementById('setting-twilio-whatsapp').value = s.twilioWhatsappPhone || '';
+    }
+  } catch (err) {
+    console.error('Error loading notification settings:', err);
+  }
+}
+
+function initNotificationSettingsForm() {
+  document.getElementById('btn-save-notif-settings')?.addEventListener('click', async () => {
+    const payload = {
+      emailEnabled: document.getElementById('setting-notif-email')?.checked,
+      whatsappEnabled: document.getElementById('setting-notif-whatsapp')?.checked,
+      smsEnabled: document.getElementById('setting-notif-sms')?.checked,
+      smtpHost: document.getElementById('setting-smtp-host')?.value.trim(),
+      smtpPort: Number(document.getElementById('setting-smtp-port')?.value) || 587,
+      smtpUser: document.getElementById('setting-smtp-user')?.value.trim(),
+      smtpPass: document.getElementById('setting-smtp-pass')?.value,
+      smtpFrom: document.getElementById('setting-smtp-from')?.value.trim(),
+      twilioAccountSid: document.getElementById('setting-twilio-sid')?.value.trim(),
+      twilioAuthToken: document.getElementById('setting-twilio-token')?.value,
+      twilioPhone: document.getElementById('setting-twilio-phone')?.value.trim(),
+      twilioWhatsappPhone: document.getElementById('setting-twilio-whatsapp')?.value.trim()
+    };
+
+    try {
+      const res = await fetch('/api/notifications/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        window.showToast('✅ Parent Notification Gateway Credentials saved successfully!', 'success');
+      } else {
+        window.showToast(data.message || 'Failed to save settings', 'danger');
+      }
+    } catch (err) {
+      window.showToast('Server error saving notification settings', 'danger');
+    }
+  });
+}
+
 // Export Handlers (Excel, CSV, PDF, Print)
 function initExportHandlers() {
   // Export Excel (.xlsx using SheetJS)
@@ -388,52 +560,50 @@ function initExportHandlers() {
       window.showToast('No attendance logs to export.', 'warning');
       return;
     }
-    const excelData = appState.attendanceLogs.map(l => ({
+
+    const data = appState.attendanceLogs.map(l => ({
       Date: l.date,
       Time: l.time,
-      'Student ID': l.studentId || l.student_id,
+      StudentID: l.studentId || l.student_id,
       Name: l.name,
-      'Roll Number': l.rollNumber || l.roll_number,
+      RollNumber: l.rollNumber || l.roll_number,
       Branch: l.branch || l.department,
       Status: l.status,
-      Device: l.device || 'Webcam',
-      Confidence: `${l.confidence || 98.5}%`
+      Device: l.device || l.mode,
+      ParentName: l.parentName || '',
+      ParentEmail: l.parentEmail || ''
     }));
 
-    const worksheet = XLSX.utils.json_to_sheet(excelData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Attendance Report');
-    XLSX.writeFile(workbook, `Attendance_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
-    window.showToast('Excel report downloaded successfully!', 'success');
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Attendance History');
+    XLSX.writeFile(wb, `Attendance_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+    window.showToast('Exported Attendance Excel Report!', 'success');
   });
 
-  // Export CSV Download
+  // Export CSV
   document.getElementById('btn-export-csv')?.addEventListener('click', () => {
-    const date = document.getElementById('history-date-filter')?.value || '';
-    const branch = document.getElementById('history-branch-filter')?.value || 'All';
-    window.location.href = `/api/reports/export/csv?date=${date}&branch=${branch}`;
-    window.showToast('Downloading CSV report...', 'info');
+    if (appState.attendanceLogs.length === 0) {
+      window.showToast('No attendance logs to export.', 'warning');
+      return;
+    }
+
+    let csv = 'Date,Time,Student ID,Name,Roll Number,Branch,Status,Parent Name,Parent Email\n';
+    appState.attendanceLogs.forEach(l => {
+      csv += `"${l.date}","${l.time}","${l.studentId || l.student_id}","${l.name}","${l.rollNumber || l.roll_number}","${l.branch || l.department}","${l.status}","${l.parentName || ''}","${l.parentEmail || ''}"\n`;
+    });
+
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Attendance_Report_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.showToast('Exported Attendance CSV File!', 'success');
   });
 
-  // Export PDF using html2pdf
+  // Print PDF Document
   document.getElementById('btn-export-pdf')?.addEventListener('click', () => {
-    const element = document.getElementById('history-printable-area');
-    if (!element) return;
-
-    const opt = {
-      margin: 0.5,
-      filename: `Attendance_Report_${new Date().toISOString().split('T')[0]}.pdf`,
-      image: { type: 'jpeg', quality: 0.98 },
-      html2canvas: { scale: 2 },
-      jsPDF: { unit: 'in', format: 'letter', orientation: 'landscape' }
-    };
-
-    window.html2pdf().set(opt).from(element).save();
-    window.showToast('PDF report exported successfully!', 'success');
-  });
-
-  // Print Window
-  document.getElementById('btn-print-history')?.addEventListener('click', () => {
     window.print();
   });
 }

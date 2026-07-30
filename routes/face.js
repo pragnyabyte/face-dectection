@@ -27,9 +27,14 @@ router.post('/enroll', async (req, res) => {
       section,
       mobile, phone,
       email,
+      parent_name, parentName,
+      parent_mobile, parentMobile,
+      parent_whatsapp, parentWhatsApp,
+      parent_email, parentEmail,
+      emergency_contact, emergencyContact,
       address,
       descriptors, 
-      sample_images, // Array of base64 images (poses 1 to 5)
+      sample_images, // Array of base64 images (poses 1 to 20)
       sample_image_base64,
       mark_attendance 
     } = req.body;
@@ -38,6 +43,11 @@ router.post('/enroll', async (req, res) => {
     const rNum = rollNumber || roll_number;
     const regNum = registrationNumber || registration_number;
     const bName = branch || department;
+    const pName = parentName || parent_name || '';
+    const pMobile = parentMobile || parent_mobile || mobile || phone || '';
+    const pWhatsapp = parentWhatsApp || parent_whatsapp || pMobile || '';
+    const pEmail = parentEmail || parent_email || email || '';
+    const emContact = emergencyContact || emergency_contact || pMobile || '';
 
     if (!sId || !descriptors || !Array.isArray(descriptors) || descriptors.length === 0) {
       return res.status(400).json({ success: false, message: 'Student ID and face descriptors are required.' });
@@ -67,7 +77,7 @@ router.post('/enroll', async (req, res) => {
     const mainPhotoPath = savedPhotoPaths[0] || '';
 
     // 3. Save to MongoDB if available
-    if (process.env.MONGODB_URI) {
+    if (process.env.MONGODB_URI && StudentModel) {
       let student = await StudentModel.findOne({ $or: [{ studentId: sId }, { rollNumber: rNum }] });
       if (!student) {
         student = await StudentModel.create({
@@ -80,6 +90,11 @@ router.post('/enroll', async (req, res) => {
           section: section || 'A',
           mobile: mobile || phone || '',
           email: email || '',
+          parentName: pName,
+          parentMobile: pMobile,
+          parentWhatsApp: pWhatsapp,
+          parentEmail: pEmail,
+          emergencyContact: emContact,
           address: address || '',
           photoPath: mainPhotoPath,
           posePhotos: savedPhotoPaths,
@@ -92,6 +107,11 @@ router.post('/enroll', async (req, res) => {
         student.posePhotos = savedPhotoPaths.length > 0 ? savedPhotoPaths : student.posePhotos;
         student.faceEncoding = descriptors[0] || student.faceEncoding;
         student.descriptors = descriptors;
+        student.parentName = pName || student.parentName;
+        student.parentMobile = pMobile || student.parentMobile;
+        student.parentWhatsApp = pWhatsapp || student.parentWhatsApp;
+        student.parentEmail = pEmail || student.parentEmail;
+        student.emergencyContact = emContact || student.emergencyContact;
         student.faceEnrolled = true;
         await student.save();
       }
@@ -108,14 +128,14 @@ router.post('/enroll', async (req, res) => {
     let student = await dbGet('SELECT * FROM students WHERE student_id = ? OR roll_number = ?', [sId, rNum]);
     if (!student) {
       const sResult = await dbRun(
-        `INSERT INTO students (student_id, name, roll_number, registration_number, branch, department, semester, section, mobile, phone, email, address, photo_path, face_enrolled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-        [sId, name || sId, rNum || sId, regNum || `REG-${rNum}`, bName || 'General', bName || 'General', semester || '1', section || 'A', mobile || phone || '', mobile || phone || '', email || '', address || '', mainPhotoPath]
+        `INSERT INTO students (student_id, name, roll_number, registration_number, branch, department, semester, section, mobile, phone, email, parent_name, parent_mobile, parent_whatsapp, parent_email, emergency_contact, address, photo_path, face_enrolled) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
+        [sId, name || sId, rNum || sId, regNum || `REG-${rNum}`, bName || 'General', bName || 'General', semester || '1', section || 'A', mobile || phone || '', mobile || phone || '', email || '', pName, pMobile, pWhatsapp, pEmail, emContact, address || '', mainPhotoPath]
       );
       student = { id: sResult.id, student_id: sId, name, roll_number: rNum, branch: bName, photo_path: mainPhotoPath };
     } else {
       await dbRun(
-        `UPDATE students SET face_enrolled = 1, photo_path = ? WHERE id = ?`,
-        [mainPhotoPath || student.photo_path, student.id]
+        `UPDATE students SET face_enrolled = 1, photo_path = ?, parent_name = ?, parent_mobile = ?, parent_whatsapp = ?, parent_email = ?, emergency_contact = ? WHERE id = ?`,
+        [mainPhotoPath || student.photo_path, pName || student.parent_name, pMobile || student.parent_mobile, pWhatsapp || student.parent_whatsapp, pEmail || student.parent_email, emContact || student.emergency_contact, student.id]
       );
     }
 
