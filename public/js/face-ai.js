@@ -58,14 +58,22 @@ class FaceAIEngine {
       if (window.faceapi) {
         console.log('[FaceAI] Loading pre-trained neural network models (SSD MobileNet V1, Landmarks 68, Recognition Net)...');
         const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
-        await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
-        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
-        await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+        try {
+          await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
+          await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+          await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+        } catch (err1) {
+          console.warn('[FaceAI] Primary CDN loading failed, switching to secondary model host...');
+          const FALLBACK_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+          await faceapi.nets.ssdMobilenetv1.loadFromUri(FALLBACK_URL);
+          await faceapi.nets.faceLandmark68Net.loadFromUri(FALLBACK_URL);
+          await faceapi.nets.faceRecognitionNet.loadFromUri(FALLBACK_URL);
+        }
         this.isModelLoaded = true;
-        console.log('[FaceAI] Pre-trained models loaded successfully!');
+        console.log('[FaceAI] Pre-trained neural models loaded successfully!');
       }
     } catch (err) {
-      console.warn('[FaceAI] CDN pre-trained models load warning:', err.message, '- falling back to feature vector extraction.');
+      console.warn('[FaceAI] Model load info:', err.message);
     }
   }
 
@@ -265,6 +273,9 @@ class FaceAIEngine {
   }
 
   computeEuclideanDistance(vecA, vecB) {
+    if (window.faceapi && typeof faceapi.euclideanDistance === 'function') {
+      return faceapi.euclideanDistance(vecA, vecB);
+    }
     let sum = 0;
     for (let i = 0; i < 128; i++) {
       const diff = vecA[i] - vecB[i];
