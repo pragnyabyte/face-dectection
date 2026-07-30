@@ -154,13 +154,10 @@ function initLoginHandlers() {
     }
   });
 
-  // Logout Handler
+  // Logout Handler (Refreshes view to Student Registration)
   document.getElementById('btn-logout')?.addEventListener('click', () => {
-    localStorage.removeItem('visioface_token');
-    localStorage.removeItem('visioface_user');
-    document.getElementById('app').classList.add('hidden');
-    document.getElementById('login-screen').classList.remove('hidden');
-    showToast('Signed out successfully.', 'info');
+    showToast('Refreshed registration portal.', 'info');
+    switchTab('students');
   });
 }
 
@@ -179,51 +176,33 @@ function hideLoginAlert() {
 }
 
 function quickFillLogin(username, password, role) {
-  document.getElementById('login-username').value = username;
-  document.getElementById('login-password').value = password;
-  
   const pill = document.querySelector(`.role-pill[data-role="${role}"]`);
   if (pill) pill.click();
 }
 
 function checkExistingSession() {
-  const savedUser = localStorage.getItem('visioface_user');
-  if (savedUser) {
-    try {
-      const user = JSON.parse(savedUser);
-      state.currentUser = user;
-      launchAppForUser(user);
-    } catch (e) {
-      document.getElementById('login-screen').classList.remove('hidden');
-    }
-  } else {
-    document.getElementById('login-screen').classList.remove('hidden');
-  }
+  const defaultAdmin = { username: 'admin', role: 'admin', name: 'System Administrator' };
+  state.currentUser = defaultAdmin;
+  launchAppForUser(defaultAdmin);
 }
 
 function launchAppForUser(user) {
-  document.getElementById('login-screen').classList.add('hidden');
-  document.getElementById('app').classList.remove('hidden');
+  const loginScreen = document.getElementById('login-screen');
+  if (loginScreen) loginScreen.classList.add('hidden');
+  const appEl = document.getElementById('app');
+  if (appEl) appEl.classList.remove('hidden');
 
-  document.getElementById('current-user-name').textContent = user.name;
-  document.getElementById('current-user-role').textContent = user.role.toUpperCase();
+  const userEl = document.getElementById('current-user-name');
+  if (userEl) userEl.textContent = user.name || 'System Administrator';
+  const roleEl = document.getElementById('current-user-role');
+  if (roleEl) roleEl.textContent = (user.role || 'ADMIN').toUpperCase();
 
-  // Filter Sidebar Navigation based on Role
+  // Make all sidebar links visible
   const navLinks = document.querySelectorAll('.nav-link');
-  navLinks.forEach(link => {
-    const tab = link.getAttribute('data-tab');
-    if (user.role === 'student') {
-      if (tab === 'dashboard' || tab === 'attendance-logs') link.classList.remove('hidden');
-      else link.classList.add('hidden');
-    } else if (user.role === 'teacher') {
-      if (tab === 'settings') link.classList.add('hidden');
-      else link.classList.remove('hidden');
-    } else {
-      link.classList.remove('hidden');
-    }
-  });
+  navLinks.forEach(link => link.classList.remove('hidden'));
 
-  switchTab('dashboard');
+  // Switch directly to Student Management & Registration tab
+  switchTab('students');
   loadStudents();
   loadDashboardStats();
 }
