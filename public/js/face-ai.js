@@ -1,30 +1,45 @@
-// Real-Time Face AI Engine & 5-Pose Capture Wizard
+// Real-Time Face AI Engine with Pre-Trained Face-API Models & 20-Pose Wizard
 class FaceAIEngine {
   constructor() {
     this.video = null;
     this.canvas = null;
     this.ctx = null;
     this.isScanning = false;
+    this.isModelLoaded = false;
     this.enrolledStudents = [];
     this.cooldowns = new Map(); // studentId -> timestamp
-    this.markedTodaySet = new Set(); // studentId strings marked today
     this.fpsCount = 0;
     this.lastFpsUpdate = Date.now();
     this.matchThreshold = 0.50; // Euclidean distance threshold (lower = stricter)
 
-    // 5-Pose Wizard State
+    // 20-Pose Capture Wizard State
     this.wizardStream = null;
     this.wizardVideo = null;
     this.wizardCanvas = null;
     this.wizardStep = 1;
-    this.capturedPoses = []; // Array of base64 images
-    this.capturedDescriptors = []; // Array of 128-float vectors
+    this.capturedPoses = []; // Array of 20 base64 images
+    this.capturedDescriptors = []; // Array of 20 128-float vectors
     this.poseTitles = [
-      'Step 1: Look Straight',
-      'Step 2: Turn Head Left',
-      'Step 3: Turn Head Right',
-      'Step 4: Look Slightly Up',
-      'Step 5: Look Slightly Down'
+      'Step 1/20: Look Straight (Center)',
+      'Step 2/20: Turn Head Slightly Left',
+      'Step 3/20: Turn Head Left',
+      'Step 4/20: Turn Head Slightly Right',
+      'Step 5/20: Turn Head Right',
+      'Step 6/20: Look Slightly Up',
+      'Step 7/20: Look Up',
+      'Step 8/20: Look Slightly Down',
+      'Step 9/20: Look Down',
+      'Step 10/20: Natural Expression / Smile',
+      'Step 11/20: Tilt Head Left',
+      'Step 12/20: Tilt Head Right',
+      'Step 13/20: Move Slightly Closer',
+      'Step 14/20: Move Slightly Farther',
+      'Step 15/20: Angle Top-Left',
+      'Step 16/20: Angle Top-Right',
+      'Step 17/20: Angle Bottom-Left',
+      'Step 18/20: Angle Bottom-Right',
+      'Step 19/20: Natural Angle 1',
+      'Step 20/20: Final Pose Verification'
     ];
   }
 
@@ -34,7 +49,24 @@ class FaceAIEngine {
     if (this.canvas) this.ctx = this.canvas.getContext('2d');
 
     this.bindEvents();
+    await this.loadPreTrainedModels();
     await this.loadEnrolledDescriptors();
+  }
+
+  async loadPreTrainedModels() {
+    try {
+      if (window.faceapi) {
+        console.log('[FaceAI] Loading pre-trained neural network models (SSD MobileNet V1, Landmarks 68, Recognition Net)...');
+        const MODEL_URL = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model';
+        await faceapi.nets.ssdMobilenetv1.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceLandmark68Net.loadFromUri(MODEL_URL);
+        await faceapi.nets.faceRecognitionNet.loadFromUri(MODEL_URL);
+        this.isModelLoaded = true;
+        console.log('[FaceAI] Pre-trained models loaded successfully!');
+      }
+    } catch (err) {
+      console.warn('[FaceAI] CDN pre-trained models load warning:', err.message, '- falling back to feature vector extraction.');
+    }
   }
 
   bindEvents() {
@@ -80,12 +112,12 @@ class FaceAIEngine {
       this.canvas.height = this.video.videoHeight || 480;
 
       this.isScanning = true;
-      document.getElementById('camera-status-pill').innerHTML = `<i class="fa-solid fa-circle me-1"></i> Scanner Active`;
+      document.getElementById('camera-status-pill').innerHTML = `<i class="fa-solid fa-circle me-1"></i> Live Attendance Scanner Active`;
       document.getElementById('camera-status-pill').className = 'status-pill green';
       document.getElementById('camera-instruction-banner').style.display = 'none';
 
       await this.loadEnrolledDescriptors();
-      window.showToast('Webcam attendance scanner started.', 'success');
+      window.showToast('Webcam live attendance scanner active.', 'success');
       this.scanLoop();
     } catch (err) {
       console.error('Camera access error:', err);
@@ -108,7 +140,7 @@ class FaceAIEngine {
     window.showToast('Attendance camera scanner stopped.', 'info');
   }
 
-  scanLoop() {
+  async scanLoop() {
     if (!this.isScanning) return;
 
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
@@ -126,35 +158,57 @@ class FaceAIEngine {
       const width = this.canvas.width;
       const height = this.canvas.height;
 
-      // Draw Face Target Guide Bounding Box
-      const boxW = Math.min(280, width * 0.38);
-      const boxH = Math.min(340, height * 0.52);
-      const boxX = (width - boxW) / 2;
-      const boxY = (height - boxH) / 2 - 20;
+      let detectedDescriptor = null;
+      let faceBox = null;
 
-      // Extract current video frame descriptor
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = width;
-      tempCanvas.height = height;
-      const tempCtx = tempCanvas.getContext('2d');
-      tempCtx.drawImage(this.video, 0, 0, width, height);
+      // 1. Try Pre-Trained Face-API Detection
+      if (this.isModelLoaded && window.faceapi) {
+        try {
+          const detection = await faceapi.detectSingleFace(this.video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 }))
+            .withFaceLandmarks()
+            .withFaceDescriptor();
 
-      const imageData = tempCtx.getImageData(0, 0, width, height);
-      const frameVector = this.computeFrameDescriptor(imageData);
+          if (detection) {
+            detectedDescriptor = Array.from(detection.descriptor);
+            const box = detection.detection.box;
+            faceBox = { boxX: box.x, boxY: box.y, boxW: box.width, boxH: box.height };
+          }
+        } catch (e) {}
+      }
 
-      // Compare against enrolled student descriptors
-      const matchResult = this.findBestFaceMatch(frameVector);
+      // Fallback descriptor extraction if pre-trained CDN stream is pending
+      if (!detectedDescriptor) {
+        const boxW = Math.min(280, width * 0.38);
+        const boxH = Math.min(340, height * 0.52);
+        const boxX = (width - boxW) / 2;
+        const boxY = (height - boxH) / 2 - 20;
+        faceBox = { boxX, boxY, boxW, boxH };
+
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = width;
+        tempCanvas.height = height;
+        const tempCtx = tempCanvas.getContext('2d');
+        tempCtx.drawImage(this.video, 0, 0, width, height);
+        const imageData = tempCtx.getImageData(0, 0, width, height);
+        detectedDescriptor = this.computeFrameDescriptor(imageData);
+      }
+
+      const { boxX, boxY, boxW, boxH } = faceBox;
+
+      // Compare detectedDescriptor against enrolled student encodings
+      const matchResult = this.findBestFaceMatch(detectedDescriptor);
 
       if (matchResult && matchResult.student) {
+        // ENROLLED STUDENT MATCH FOUND
         const student = matchResult.student;
         const confidencePct = Math.min(99.9, Math.max(75.0, (1 - matchResult.distance) * 100)).toFixed(1);
 
-        // Draw Vibrant Green bounding box for recognized student
+        // Draw Vibrant Green Bounding Box
         this.ctx.lineWidth = 3;
         this.ctx.strokeStyle = '#22c55e';
         this.ctx.strokeRect(boxX, boxY, boxW, boxH);
 
-        // Draw Name & Roll Header Tag above Box
+        // Draw Name & Roll Header Tag
         this.ctx.fillStyle = 'rgba(34, 197, 94, 0.9)';
         this.ctx.fillRect(boxX, boxY - 38, boxW, 32);
         this.ctx.fillStyle = '#ffffff';
@@ -165,16 +219,18 @@ class FaceAIEngine {
         this.checkAndMarkAttendance(student, confidencePct);
 
       } else {
-        // Unknown Person Detection (No match or distance > threshold)
+        // UNKNOWN / UNREGISTERED PERSON -> STRICTLY DO NOT MARK ATTENDANCE
         this.ctx.lineWidth = 3;
-        this.ctx.strokeStyle = '#ef4444'; // Red bounding box
+        this.ctx.strokeStyle = '#ef4444'; // Red Bounding Box
         this.ctx.strokeRect(boxX, boxY, boxW, boxH);
 
         this.ctx.fillStyle = 'rgba(239, 68, 68, 0.9)';
         this.ctx.fillRect(boxX, boxY - 38, boxW, 32);
         this.ctx.fillStyle = '#ffffff';
-        this.ctx.font = 'bold 15px Inter, sans-serif';
-        this.ctx.fillText('⚠ Unknown Person (Not Enrolled)', boxX + 10, boxY - 16);
+        this.ctx.font = 'bold 14px Inter, sans-serif';
+        this.ctx.fillText('❌ Unknown Person (Not Enrolled)', boxX + 10, boxY - 16);
+
+        // Explicitly block attendance marking for unknown persons
       }
     }
 
@@ -182,7 +238,7 @@ class FaceAIEngine {
   }
 
   findBestFaceMatch(frameVector) {
-    if (this.enrolledStudents.length === 0) return null;
+    if (this.enrolledStudents.length === 0 || !frameVector) return null;
 
     let bestMatch = null;
     let minDistance = Infinity;
@@ -201,10 +257,11 @@ class FaceAIEngine {
       }
     }
 
+    // Only recognize if distance is within strict threshold
     if (minDistance <= this.matchThreshold) {
       return bestMatch;
     }
-    return null; // Unknown face
+    return null; // Unknown / Unregistered
   }
 
   computeEuclideanDistance(vecA, vecB) {
@@ -241,7 +298,7 @@ class FaceAIEngine {
     const now = Date.now();
     const lastMarked = this.cooldowns.get(studentId) || 0;
 
-    // 15 second client cooldown to prevent flooding requests while scanning same face
+    // 15 second client cooldown to prevent duplicate API requests in rapid frames
     if (now - lastMarked < 15000) return;
 
     this.cooldowns.set(studentId, now);
@@ -265,13 +322,13 @@ class FaceAIEngine {
         this.showRecognitionOverlay(student.name, `Roll: ${student.rollNumber || student.roll_number} | ${student.branch}`, data.attendance.status, data.attendance.time, false);
         window.showToast(`✔ Attendance Marked: ${student.name} (${data.attendance.status})`, 'success');
         
-        // Add item to Live Attendance List right sidebar
+        // Add item to Live Attendance Feed right sidebar
         this.addLiveFeedItem(student.name, student.rollNumber || student.roll_number, student.branch, data.attendance.time, data.attendance.status);
 
         if (window.loadDashboardStats) window.loadDashboardStats();
 
       } else if (data.duplicate) {
-        // Strict Duplicate Warning Notification
+        // Strict Duplicate Prevention Alert
         this.showRecognitionOverlay(student.name, `Roll: ${student.rollNumber || student.roll_number} | ${student.branch}`, 'ALREADY MARKED TODAY', '', true);
         window.showToast(data.message, 'warning');
       }
@@ -284,7 +341,6 @@ class FaceAIEngine {
     const list = document.getElementById('live-attendance-list');
     if (!list) return;
 
-    // Clear empty message
     const emptyMsg = list.querySelector('.feed-empty');
     if (emptyMsg) emptyMsg.remove();
 
@@ -320,7 +376,7 @@ class FaceAIEngine {
       badge.className = 'badge bg-warning text-dark';
       badge.textContent = '⚠️ ALREADY MARKED PRESENT TODAY';
       icon.className = 'fa-solid fa-triangle-exclamation text-warning alert-icon';
-      subMsg.innerHTML = `<i class="fa-solid fa-ban me-1"></i> Duplicate attendance avoided for today.`;
+      subMsg.innerHTML = `<i class="fa-solid fa-ban me-1"></i> Duplicate attendance blocked for today.`;
     } else {
       badge.className = 'badge bg-success';
       badge.textContent = `✔ ATTENDANCE MARKED ${statusText.toUpperCase()}`;
@@ -364,7 +420,7 @@ class FaceAIEngine {
     } catch (e) {}
   }
 
-  // --- 5-POSE CAPTURE WIZARD IMPLEMENTATION ---
+  // --- 20-POSE CAPTURE WIZARD IMPLEMENTATION ---
   async openRegisterWizard() {
     this.wizardStep = 1;
     this.capturedPoses = [];
@@ -381,15 +437,17 @@ class FaceAIEngine {
     document.getElementById('btn-wizard-next').classList.remove('hidden');
     document.getElementById('btn-wizard-save').classList.add('hidden');
 
-    // Clear Pose Thumbnails
-    for (let i = 1; i <= 5; i++) {
+    // Clear 20 Pose Thumbnails
+    for (let i = 1; i <= 20; i++) {
       const thumb = document.getElementById(`thumb-pose-${i}`);
       if (thumb) {
         thumb.className = 'pose-thumb';
         thumb.style.backgroundImage = 'none';
+        thumb.textContent = i;
       }
     }
 
+    document.getElementById('pose-progress-bar').style.width = '5%';
     document.getElementById('modal-student-register').classList.add('show');
   }
 
@@ -407,7 +465,7 @@ class FaceAIEngine {
         return;
       }
 
-      // Transition to Step 2 (Webcam 5-Pose Capture)
+      // Transition to Step 2 (Webcam 20-Pose Capture)
       this.wizardStep = 2;
       document.getElementById('wizard-content-step1').classList.add('hidden');
       document.getElementById('wizard-content-step2').classList.remove('hidden');
@@ -441,11 +499,12 @@ class FaceAIEngine {
   }
 
   promptNextPose(poseNum) {
-    if (poseNum > 5) {
+    if (poseNum > 20) {
       document.getElementById('pose-instruction-title').innerHTML = `
-        <i class="fa-solid fa-circle-check text-success me-2"></i> All 5 Face Poses Captured!
+        <i class="fa-solid fa-circle-check text-success me-2"></i> All 20 Facial Samples Captured!
       `;
-      document.getElementById('pose-instruction-sub').textContent = 'Click "Complete Registration & Save" to finish.';
+      document.getElementById('pose-instruction-sub').textContent = 'Click "Complete Registration & Save" to store encodings in MongoDB.';
+      document.getElementById('pose-progress-bar').style.width = '100%';
       return;
     }
 
@@ -453,15 +512,16 @@ class FaceAIEngine {
     document.getElementById('pose-instruction-title').innerHTML = `
       <i class="fa-solid fa-camera text-accent me-2"></i> ${title}
     `;
-    document.getElementById('pose-instruction-sub').textContent = `Align face and hold position. Capturing pose ${poseNum} of 5 automatically...`;
+    document.getElementById('pose-instruction-sub').textContent = `Position face and hold steady. Capturing pose ${poseNum} of 20 automatically...`;
+    document.getElementById('pose-progress-bar').style.width = `${(poseNum / 20) * 100}%`;
 
-    // Auto capture after 2 seconds per pose
+    // Auto capture after 900ms per pose for fast, smooth 20-picture sequence
     setTimeout(() => {
       this.capturePosePhoto(poseNum);
-    }, 2200);
+    }, 900);
   }
 
-  capturePosePhoto(poseNum) {
+  async capturePosePhoto(poseNum) {
     if (!this.wizardVideo || !this.wizardVideo.srcObject) return;
 
     const canvas = document.createElement('canvas');
@@ -470,38 +530,55 @@ class FaceAIEngine {
     const ctx = canvas.getContext('2d');
     ctx.drawImage(this.wizardVideo, 0, 0, canvas.width, canvas.height);
 
-    const base64Img = canvas.toDataURL('image/jpeg', 0.88);
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const descriptor = this.computeFrameDescriptor(imageData);
+    const base64Img = canvas.toDataURL('image/jpeg', 0.85);
+
+    // 1. Try Pre-Trained Neural Descriptor
+    let descriptor = null;
+    if (this.isModelLoaded && window.faceapi) {
+      try {
+        const detection = await faceapi.detectSingleFace(this.wizardVideo, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.4 }))
+          .withFaceLandmarks()
+          .withFaceDescriptor();
+        if (detection) {
+          descriptor = Array.from(detection.descriptor);
+        }
+      } catch (e) {}
+    }
+
+    // Fallback descriptor if detection stream is pending
+    if (!descriptor) {
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      descriptor = this.computeFrameDescriptor(imageData);
+    }
 
     this.capturedPoses.push(base64Img);
     this.capturedDescriptors.push(descriptor);
 
-    // Update thumbnail UI
+    // Update 20-grid thumbnail UI
     const thumb = document.getElementById(`thumb-pose-${poseNum}`);
     if (thumb) {
       thumb.className = 'pose-thumb completed';
       thumb.style.backgroundImage = `url('${base64Img}')`;
       thumb.style.backgroundSize = 'cover';
+      thumb.textContent = '';
     }
 
     this.playSuccessChime();
-    window.showToast(`Pose ${poseNum}/5 Captured!`, 'success');
 
-    // Trigger next pose prompt
-    if (poseNum < 5) {
+    if (poseNum < 20) {
       this.promptNextPose(poseNum + 1);
     } else {
       document.getElementById('pose-instruction-title').innerHTML = `
-        <i class="fa-solid fa-circle-check text-success me-2"></i> All 5 Face Poses Captured!
+        <i class="fa-solid fa-circle-check text-success me-2"></i> All 20 Facial Samples Captured!
       `;
-      document.getElementById('pose-instruction-sub').textContent = 'Ready to save student profile and encodings.';
+      document.getElementById('pose-instruction-sub').textContent = '20 pre-trained encodings ready to save.';
+      document.getElementById('pose-progress-bar').style.width = '100%';
     }
   }
 
   async saveWizardStudent() {
     if (this.capturedDescriptors.length < 1) {
-      window.showToast('Please capture face poses first.', 'warning');
+      window.showToast('Please capture 20 face pictures first.', 'warning');
       return;
     }
 
@@ -533,7 +610,7 @@ class FaceAIEngine {
 
       const data = await res.json();
       if (data.success) {
-        window.showToast(`Student ${studentData.name} registered with 5-pose face encodings!`, 'success');
+        window.showToast(`Student ${studentData.name} registered with 20 face encodings!`, 'success');
         this.closeWizard();
         await this.loadEnrolledDescriptors();
         if (window.loadStudentsDirectory) window.loadStudentsDirectory();

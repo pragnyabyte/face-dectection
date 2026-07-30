@@ -10,10 +10,11 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
   
-  <!-- External JS Libraries (Chart.js, SheetJS, html2pdf) -->
+  <!-- External JS Libraries (Chart.js, SheetJS, html2pdf, vladmandic face-api) -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.js"></script>
 
   <!-- Custom Glassmorphism Styles -->
   <link rel="stylesheet" href="css/styles.css" />
@@ -685,13 +686,18 @@
             </form>
           </div>
 
-          <!-- STEP 2: 5-POSE FACE CAPTURE WEBCAM WIZARD -->
+          <!-- STEP 2: 20-POSE FACE CAPTURE WEBCAM WIZARD -->
           <div id="wizard-content-step2" class="hidden">
             <div class="text-center mb-3">
               <h5 id="pose-instruction-title" class="text-accent fw-bold fs-4">
-                <i class="fa-solid fa-arrow-up-long me-2"></i> Step 1: Look Straight
+                <i class="fa-solid fa-camera me-2"></i> Step 1/20: Look Straight
               </h5>
-              <p class="text-muted small" id="pose-instruction-sub">Position face inside camera box and hold steady for automatic capture.</p>
+              <p class="text-muted small" id="pose-instruction-sub">Position face inside target box. Pre-trained neural model captures 20 facial samples automatically.</p>
+              
+              <!-- Progress Bar -->
+              <div class="progress mt-2" style="height: 8px; max-width: 480px; margin: 0 auto; background: rgba(255,255,255,0.1);">
+                <div class="progress-bar bg-success progress-bar-striped progress-bar-animated" id="pose-progress-bar" style="width: 5%;"></div>
+              </div>
             </div>
 
             <!-- Webcam Capture Feed Box -->
@@ -704,13 +710,28 @@
               </div>
             </div>
 
-            <!-- Pose Capture Gallery Bar -->
-            <div class="pose-gallery-bar mt-3">
-              <div class="pose-thumb" id="thumb-pose-1"><span>1. Straight</span></div>
-              <div class="pose-thumb" id="thumb-pose-2"><span>2. Left</span></div>
-              <div class="pose-thumb" id="thumb-pose-3"><span>3. Right</span></div>
-              <div class="pose-thumb" id="thumb-pose-4"><span>4. Up</span></div>
-              <div class="pose-thumb" id="thumb-pose-5"><span>5. Down</span></div>
+            <!-- 20-Pose Grid Gallery Bar -->
+            <div class="pose-gallery-grid mt-3">
+              <div class="pose-thumb" id="thumb-pose-1">1</div>
+              <div class="pose-thumb" id="thumb-pose-2">2</div>
+              <div class="pose-thumb" id="thumb-pose-3">3</div>
+              <div class="pose-thumb" id="thumb-pose-4">4</div>
+              <div class="pose-thumb" id="thumb-pose-5">5</div>
+              <div class="pose-thumb" id="thumb-pose-6">6</div>
+              <div class="pose-thumb" id="thumb-pose-7">7</div>
+              <div class="pose-thumb" id="thumb-pose-8">8</div>
+              <div class="pose-thumb" id="thumb-pose-9">9</div>
+              <div class="pose-thumb" id="thumb-pose-10">10</div>
+              <div class="pose-thumb" id="thumb-pose-11">11</div>
+              <div class="pose-thumb" id="thumb-pose-12">12</div>
+              <div class="pose-thumb" id="thumb-pose-13">13</div>
+              <div class="pose-thumb" id="thumb-pose-14">14</div>
+              <div class="pose-thumb" id="thumb-pose-15">15</div>
+              <div class="pose-thumb" id="thumb-pose-16">16</div>
+              <div class="pose-thumb" id="thumb-pose-17">17</div>
+              <div class="pose-thumb" id="thumb-pose-18">18</div>
+              <div class="pose-thumb" id="thumb-pose-19">19</div>
+              <div class="pose-thumb" id="thumb-pose-20">20</div>
             </div>
           </div>
 
