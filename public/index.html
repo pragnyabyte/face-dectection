@@ -86,6 +86,10 @@
             <i class="fa-solid fa-clock-rotate-left"></i>
             <span>Attendance History</span>
           </button>
+          <button class="nav-link" data-tab="security-logs">
+            <i class="fa-solid fa-shield-cat"></i>
+            <span>Security Audit Logs</span>
+          </button>
           <button class="nav-link" data-tab="settings">
             <i class="fa-solid fa-sliders"></i>
             <span>System Settings</span>
@@ -295,6 +299,28 @@
               <div class="camera-container">
                 <video id="webcam-video" autoplay playsinline muted></video>
                 <canvas id="camera-overlay-canvas"></canvas>
+
+                <!-- Real-Time AI Security HUD Overlay -->
+                <div class="security-hud-overlay" id="security-hud-overlay">
+                  <div class="d-flex justify-content-between align-items-center w-100 mb-2">
+                    <span id="security-hud-liveness" class="hud-badge bg-success"><i class="fa-solid fa-shield-halved me-1"></i> Liveness: 98.5%</span>
+                    <span id="security-hud-spoof" class="hud-badge bg-info"><i class="fa-solid fa-user-shield me-1"></i> Spoof Risk: 1.2%</span>
+                  </div>
+                  
+                  <div id="security-hud-challenge" class="security-challenge-prompt">
+                    👈 Please Turn Head Slightly Left
+                  </div>
+
+                  <div id="security-hud-progress" class="security-progress-box mt-2">
+                    <div class="d-flex justify-content-between extra-small text-white-50">
+                      <span id="security-step-text">Scanning Face...</span>
+                      <span id="security-step-percent">25%</span>
+                    </div>
+                    <div class="progress mt-1" style="height: 5px; background: rgba(255,255,255,0.15);">
+                      <div id="security-step-bar" class="progress-bar bg-info progress-bar-striped progress-bar-animated" style="width: 25%;"></div>
+                    </div>
+                  </div>
+                </div>
                 
                 <!-- Live Instruction Banner -->
                 <div class="camera-instruction-banner" id="camera-instruction-banner">
@@ -668,6 +694,106 @@
           </div>
         </section>
 
+
+        <!-- 6. SECURITY AUDIT LOGS MODULE -->
+        <section id="view-security-logs" class="tab-view">
+          <div class="view-header">
+            <div>
+              <h2 class="view-title">Bank-Grade Security Audit & Anti-Spoof Logs</h2>
+              <p class="view-subtitle">Monitor anti-spoofing score breakdowns, blocked replay video attacks, display screen attempts, and unknown subjects.</p>
+            </div>
+            <div class="quick-actions flex-gap">
+              <a href="/api/security/export" class="btn btn-outline-info">
+                <i class="fa-solid fa-file-csv me-1"></i> Export Security CSV
+              </a>
+            </div>
+          </div>
+
+          <!-- Security KPI Analytics Grid -->
+          <div class="kpi-grid mb-4">
+            <div class="kpi-card">
+              <div class="kpi-icon bg-red"><i class="fa-solid fa-shield-virus"></i></div>
+              <div class="kpi-content">
+                <span class="kpi-label">Total Spoof Attempts</span>
+                <h3 class="kpi-value" id="sec-kpi-total-spoof">0</h3>
+                <span class="kpi-sub text-danger"><i class="fa-solid fa-ban me-1"></i> Blocked & Logged</span>
+              </div>
+            </div>
+
+            <div class="kpi-card">
+              <div class="kpi-icon bg-amber"><i class="fa-solid fa-mobile-screen-button"></i></div>
+              <div class="kpi-content">
+                <span class="kpi-label">Phone Screens Blocked</span>
+                <h3 class="kpi-value" id="sec-kpi-phone-blocked">0</h3>
+                <span class="kpi-sub text-warning"><i class="fa-solid fa-display me-1"></i> Display Attacks</span>
+              </div>
+            </div>
+
+            <div class="kpi-card">
+              <div class="kpi-icon bg-purple"><i class="fa-solid fa-film"></i></div>
+              <div class="kpi-content">
+                <span class="kpi-label">Replay Attacks Blocked</span>
+                <h3 class="kpi-value" id="sec-kpi-replay-blocked">0</h3>
+                <span class="kpi-sub text-purple"><i class="fa-solid fa-video me-1"></i> Video Playback</span>
+              </div>
+            </div>
+
+            <div class="kpi-card">
+              <div class="kpi-icon bg-green"><i class="fa-solid fa-user-check"></i></div>
+              <div class="kpi-content">
+                <span class="kpi-label">Live Verifications</span>
+                <h3 class="kpi-value" id="sec-kpi-live-verifications">0</h3>
+                <span class="kpi-sub text-success"><i class="fa-solid fa-check-double me-1"></i> 100% Genuine</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Security Audit Logs Table -->
+          <div class="glass-card p-4">
+            <div class="card-header flex-between mb-3">
+              <h5><i class="fa-solid fa-shield-halved me-2 text-accent"></i> Real-Time Security Incident Logs</h5>
+              <div class="d-flex gap-2">
+                <select id="sec-status-filter" class="form-control form-control-sm" style="width: 150px;">
+                  <option value="All">All Statuses</option>
+                  <option value="PASSED">Passed</option>
+                  <option value="FAILED_SPOOF">Failed Spoof</option>
+                  <option value="FAILED_LIVENESS">Failed Liveness</option>
+                  <option value="FAILED_MULTI_FACE">Failed Multi-Face</option>
+                </select>
+                <select id="sec-attack-filter" class="form-control form-control-sm" style="width: 170px;">
+                  <option value="All">All Attack Types</option>
+                  <option value="PHONE_SCREEN">Phone Screen</option>
+                  <option value="PRINTED_PHOTO">Printed Photo</option>
+                  <option value="VIDEO_REPLAY">Video Replay</option>
+                  <option value="DEEPFAKE">Deepfake</option>
+                  <option value="MULTI_FACE">Multi-Face</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="table-responsive">
+              <table class="custom-table">
+                <thead>
+                  <tr>
+                    <th>Time</th>
+                    <th>Subject ID</th>
+                    <th>Subject Name</th>
+                    <th>Status</th>
+                    <th>Attack Category</th>
+                    <th>Liveness %</th>
+                    <th>Spoof Risk %</th>
+                    <th>Match %</th>
+                    <th>Security Reason</th>
+                  </tr>
+                </thead>
+                <tbody id="sec-logs-table-body">
+                  <tr><td colspan="9" class="text-center p-3 text-muted">Loading security audit logs...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
       </main>
     </div>
 
@@ -845,6 +971,7 @@
   </div>
 
   <!-- App Scripts -->
+  <script src="js/anti-spoof.js"></script>
   <script src="js/app.js"></script>
   <script src="js/face-ai.js"></script>
   <script src="js/reports.js"></script>

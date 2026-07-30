@@ -25,6 +25,7 @@ const faceRoutes = require('./routes/face');
 const attendanceRoutes = require('./routes/attendance');
 const reportRoutes = require('./routes/reports');
 const notificationRoutes = require('./routes/notifications');
+const securityRoutes = require('./routes/security');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/students', studentRoutes);
@@ -32,6 +33,7 @@ app.use('/api/face', faceRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/notifications', notificationRoutes);
+app.use('/api/security', securityRoutes);
 
 // SPA Fallback to index.html
 app.get('*', (req, res) => {

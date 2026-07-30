@@ -51,6 +51,7 @@ window.switchTab = function(tabId) {
   if (tabId === 'dashboard') loadDashboardStats();
   if (tabId === 'students') loadStudentsDirectory();
   if (tabId === 'attendance-history') loadAttendanceHistory();
+  if (tabId === 'security-logs') loadSecurityLogs();
   if (tabId === 'settings') loadNotificationSettings();
 };
 
@@ -607,3 +608,90 @@ function initExportHandlers() {
     window.print();
   });
 }
+
+// Security Audit & Anti-Spoof Logs Loader
+async function loadSecurityLogs() {
+  const status = document.getElementById('sec-status-filter')?.value || 'All';
+  const attackType = document.getElementById('sec-attack-filter')?.value || 'All';
+
+  try {
+    const query = new URLSearchParams({ status, attackType });
+    const res = await fetch(`/api/security/logs?${query.toString()}`);
+    const data = await res.json();
+
+    if (data.success) {
+      renderSecurityLogsTable(data.logs || []);
+    }
+
+    loadSecurityStats();
+  } catch (err) {
+    console.error('Error loading security logs:', err);
+  }
+}
+
+async function loadSecurityStats() {
+  try {
+    const res = await fetch('/api/security/stats');
+    const data = await res.json();
+
+    if (data.success && data.stats) {
+      const s = data.stats;
+      if (document.getElementById('sec-kpi-total-spoof')) document.getElementById('sec-kpi-total-spoof').textContent = s.totalSpoofAttempts || 0;
+      if (document.getElementById('sec-kpi-phone-blocked')) document.getElementById('sec-kpi-phone-blocked').textContent = s.phoneScreensBlocked || 0;
+      if (document.getElementById('sec-kpi-replay-blocked')) document.getElementById('sec-kpi-replay-blocked').textContent = s.replayAttacksBlocked || 0;
+      if (document.getElementById('sec-kpi-live-verifications')) document.getElementById('sec-kpi-live-verifications').textContent = s.liveVerifications || 0;
+    }
+  } catch (err) {
+    console.error('Error loading security stats:', err);
+  }
+}
+
+function renderSecurityLogsTable(logs) {
+  const tbody = document.getElementById('sec-logs-table-body');
+  if (!tbody) return;
+
+  if (logs.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="9" class="text-center p-4 text-muted">No security incident logs recorded yet.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = logs.map(l => {
+    const sId = l.studentId || l.student_id || 'UNKNOWN';
+    const sName = l.studentName || l.student_name || 'Unknown Subject';
+    const attack = l.attackType || l.attack_type || 'NONE';
+    const status = l.status || 'PASSED';
+    const lScore = l.livenessScore || l.liveness_score || 0;
+    const sScore = l.spoofScore || l.spoof_score || 0;
+    const mScore = l.faceMatchScore || l.face_match_score || 0;
+
+    let statusBadge = `<span class="badge bg-success"><i class="fa-solid fa-check me-1"></i> Passed</span>`;
+    if (status !== 'PASSED') {
+      statusBadge = `<span class="badge bg-danger"><i class="fa-solid fa-ban me-1"></i> Blocked</span>`;
+    }
+
+    let attackBadge = `<span class="badge bg-info text-dark">Live Human</span>`;
+    if (attack === 'PHONE_SCREEN') attackBadge = `<span class="badge bg-warning text-dark"><i class="fa-solid fa-mobile-screen me-1"></i> Phone Screen</span>`;
+    if (attack === 'PRINTED_PHOTO') attackBadge = `<span class="badge bg-danger"><i class="fa-solid fa-print me-1"></i> Printed Photo</span>`;
+    if (attack === 'VIDEO_REPLAY') attackBadge = `<span class="badge bg-purple"><i class="fa-solid fa-film me-1"></i> Replay Video</span>`;
+    if (attack === 'DEEPFAKE') attackBadge = `<span class="badge bg-danger"><i class="fa-solid fa-robot me-1"></i> Deepfake</span>`;
+    if (attack === 'MULTI_FACE') attackBadge = `<span class="badge bg-amber text-dark"><i class="fa-solid fa-users me-1"></i> Multi-Face</span>`;
+
+    return `
+      <tr>
+        <td><small class="fw-bold">${l.time}</small><br><span class="extra-small text-muted">${l.date}</span></td>
+        <td><code>${sId}</code></td>
+        <td class="fw-bold">${sName}</td>
+        <td>${statusBadge}</td>
+        <td>${attackBadge}</td>
+        <td><strong class="text-success">${lScore.toFixed(1)}%</strong></td>
+        <td><strong class="${sScore > 5 ? 'text-danger' : 'text-info'}">${sScore.toFixed(1)}%</strong></td>
+        <td><strong class="text-primary">${mScore.toFixed(1)}%</strong></td>
+        <td><small class="text-muted">${l.failureReason || l.failure_reason || 'Verification Passed'}</small></td>
+      </tr>
+    `;
+  }).join('');
+}
+
+document.getElementById('sec-status-filter')?.addEventListener('change', loadSecurityLogs);
+document.getElementById('sec-attack-filter')?.addEventListener('change', loadSecurityLogs);
+

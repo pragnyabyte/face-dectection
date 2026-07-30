@@ -224,6 +224,30 @@ async function initDatabase() {
           )
         `);
 
+        // Anti-Spoof & Security Audit Logs Table
+        await dbRun(`
+          CREATE TABLE IF NOT EXISTS security_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id TEXT DEFAULT 'UNKNOWN',
+            student_name TEXT DEFAULT 'Unknown Subject',
+            date TEXT NOT NULL,
+            time TEXT NOT NULL,
+            timestamp INTEGER NOT NULL,
+            recognition_confidence REAL DEFAULT 0,
+            liveness_score REAL DEFAULT 0,
+            spoof_score REAL DEFAULT 0,
+            face_match_score REAL DEFAULT 0,
+            attack_type TEXT DEFAULT 'NONE',
+            device TEXT DEFAULT 'Webcam Camera',
+            camera_resolution TEXT DEFAULT '640x480',
+            ip_address TEXT DEFAULT '127.0.0.1',
+            status TEXT DEFAULT 'PASSED',
+            failure_reason TEXT DEFAULT 'Verification Passed',
+            snapshot_path TEXT DEFAULT '',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+
         const settingsCount = await dbGet('SELECT COUNT(*) as count FROM notification_settings');
         if (settingsCount.count === 0) {
           await dbRun(

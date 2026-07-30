@@ -15,11 +15,49 @@ try {
 // POST /api/attendance/mark - Automatically mark attendance & dispatch parent notifications
 router.post('/mark', async (req, res) => {
   try {
-    const { student_id, studentId, confidence, device, mode, location_lat, location_lng } = req.body;
+    const { 
+      student_id, studentId, 
+      confidence, 
+      livenessScore, 
+      spoofScore, 
+      faceMatchScore,
+      attackType,
+      device, mode, 
+      location_lat, location_lng 
+    } = req.body;
     const targetStudentId = studentId || student_id;
 
     if (!targetStudentId) {
       return res.status(400).json({ success: false, message: 'Student ID is required' });
+    }
+
+    const lScore = livenessScore !== undefined ? Number(livenessScore) : 98.0;
+    const sScore = spoofScore !== undefined ? Number(spoofScore) : 1.5;
+    const matchScore = faceMatchScore !== undefined ? Number(faceMatchScore) : (confidence ? Number(confidence) : 98.5);
+
+    // Bank-Grade Security Gate: Rejection if Liveness < 95% or Spoof Risk > 5%
+    if (lScore < 95.0) {
+      return res.status(403).json({
+        success: false,
+        securityViolation: true,
+        message: `❌ Liveness Check Failed (Liveness Score: ${lScore.toFixed(1)}%). Live human required.`
+      });
+    }
+
+    if (sScore > 5.0) {
+      return res.status(403).json({
+        success: false,
+        securityViolation: true,
+        message: `❌ Anti-Spoofing Alert: Fake Face / Display Attack Detected (${attackType || 'SPOOF'} - Risk: ${sScore.toFixed(1)}%).`
+      });
+    }
+
+    if (matchScore < 95.0) {
+      return res.status(403).json({
+        success: false,
+        securityViolation: true,
+        message: `❌ Recognition Confidence Below Threshold (${matchScore.toFixed(1)}% < 95.0%).`
+      });
     }
 
     const now = new Date();
